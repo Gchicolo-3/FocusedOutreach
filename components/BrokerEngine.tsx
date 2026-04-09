@@ -34,8 +34,10 @@ export default function BrokerEngine() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     initDefaultBrokers();
     setBrokersState(getBrokers());
     setColdBrokersState(getColdBrokers());
@@ -79,9 +81,10 @@ export default function BrokerEngine() {
     setColdBrokersState(getColdBrokers());
   }
 
+  if (!mounted) return null;
+
   return (
     <div className="space-y-6">
-      {/* Active Brokers */}
       <div>
         <h2 className="text-lg font-semibold mb-3">Active Brokers</h2>
         <div className="space-y-3">
@@ -100,7 +103,7 @@ export default function BrokerEngine() {
                         <span className="font-semibold">{broker.name}</span>
                         <span className="text-sm text-gray-500">{broker.firm}</span>
                       </div>
-                      <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                      <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
                         <span>{broker.dealCount} deals</span>
                         <span>Last: {broker.lastTouch || 'Never'}</span>
                         <span>Next due: {nextDueDate(broker.lastTouch)}</span>
@@ -148,7 +151,6 @@ export default function BrokerEngine() {
         </div>
       </div>
 
-      {/* Cold Broker Queue */}
       {coldBrokers.length > 0 && (
         <div>
           <h2 className="text-lg font-semibold mb-3">Cold Broker Queue</h2>
@@ -164,18 +166,20 @@ export default function BrokerEngine() {
                         <span className="text-sm text-gray-500">{cb.title}</span>
                       </div>
                       <p className="text-sm text-gray-500 mt-0.5">{cb.firm}</p>
-                      <div className="flex gap-3 mt-1 text-xs text-gray-500">
+                      <div className="flex gap-3 mt-1 text-xs text-gray-500 flex-wrap">
                         {cb.email && <span>{cb.email}</span>}
                         {cb.phone && <span>{cb.phone}</span>}
                       </div>
                     </div>
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                      cb.status === 'outreach_sent'
-                        ? 'bg-amber-100 text-amber-700'
-                        : cb.status === 'connected'
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-blue-100 text-[#1e40af]'
-                    }`}>
+                    <span
+                      className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        cb.status === 'outreach_sent'
+                          ? 'bg-amber-100 text-amber-700'
+                          : cb.status === 'connected'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-blue-100 text-[#1e40af]'
+                      }`}
+                    >
                       {cb.status === 'outreach_sent' ? 'Outreach Sent' : cb.status === 'connected' ? 'Connected' : 'New'}
                     </span>
                   </div>

@@ -21,7 +21,6 @@ export default function CSVUploader({ onImport }: { onImport: () => void }) {
     };
     reader.readAsText(file);
 
-    // Reset so the same file can be re-uploaded
     if (fileRef.current) fileRef.current.value = '';
   }
 

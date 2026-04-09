@@ -27,6 +27,7 @@ function LiveClock() {
     return () => clearInterval(interval);
   }, []);
 
+  if (!time) return null;
   return <span className="text-sm text-gray-500">{time}</span>;
 }
 
@@ -34,8 +35,10 @@ export default function Home() {
   const [tab, setTab] = useState<TabId>('do-this-now');
   const [lastImport, setLastImportState] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     setLastImportState(getLastImport());
   }, []);
 
@@ -52,10 +55,9 @@ export default function Home() {
   });
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Header */}
+    <div className="min-h-screen flex flex-col w-full">
       <header className="bg-white border-b border-[#e8e8e0] px-4 py-3">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
+        <div className="max-w-5xl mx-auto flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-lg font-bold text-[#1a1a1a]">
               Focus Studio — Prospecting OS
@@ -66,7 +68,7 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {lastImport && (
+            {mounted && lastImport && (
               <span className="text-xs text-gray-400">
                 Last import: {new Date(lastImport).toLocaleDateString()}
               </span>
@@ -76,12 +78,10 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Tabs */}
       <div className="max-w-5xl mx-auto w-full">
         <TabNav active={tab} onChange={setTab} />
       </div>
 
-      {/* Content */}
       <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-6">
         {tab === 'do-this-now' && <DoThisNow key={refreshKey} />}
         {tab === 'broker-engine' && <BrokerEngine key={refreshKey} />}

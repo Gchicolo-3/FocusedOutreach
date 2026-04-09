@@ -14,7 +14,7 @@ function get<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
   try {
     const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
+    return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
     return fallback;
   }
@@ -25,7 +25,6 @@ function set<T>(key: string, value: T): void {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-// Leads
 export function getLeads(): Lead[] {
   return get<Lead[]>(KEYS.leads, []);
 }
@@ -33,7 +32,6 @@ export function setLeads(leads: Lead[]): void {
   set(KEYS.leads, leads);
 }
 
-// Done
 export function getDone(): DoneEntry[] {
   return get<DoneEntry[]>(KEYS.done, []);
 }
@@ -44,12 +42,7 @@ export function markDone(leadId: string, date: string): void {
     set(KEYS.done, done);
   }
 }
-export function isDoneToday(leadId: string): boolean {
-  const today = new Date().toISOString().split('T')[0];
-  return getDone().some((d) => d.id === leadId && d.date === today);
-}
 
-// Snoozed
 export function getSnoozed(): SnoozedEntry[] {
   return get<SnoozedEntry[]>(KEYS.snoozed, []);
 }
@@ -57,37 +50,28 @@ export function snoozeLead(leadId: string, days: number): void {
   const snoozed = getSnoozed();
   const until = new Date();
   until.setDate(until.getDate() + days);
-  const existing = snoozed.findIndex((s) => s.id === leadId);
   const entry = { id: leadId, until: until.toISOString().split('T')[0] };
-  if (existing >= 0) {
-    snoozed[existing] = entry;
-  } else {
-    snoozed.push(entry);
-  }
+  const idx = snoozed.findIndex((s) => s.id === leadId);
+  if (idx >= 0) snoozed[idx] = entry;
+  else snoozed.push(entry);
   set(KEYS.snoozed, snoozed);
 }
-export function isSnoozed(leadId: string): boolean {
-  const today = new Date().toISOString().split('T')[0];
-  return getSnoozed().some((s) => s.id === leadId && s.until > today);
-}
 
-// Brokers
 export function getBrokers(): Broker[] {
   return get<Broker[]>(KEYS.brokers, []);
 }
 export function setBrokers(brokers: Broker[]): void {
   set(KEYS.brokers, brokers);
 }
-export function updateBroker(brokerId: string, updates: Partial<Broker>): void {
+export function updateBroker(id: string, updates: Partial<Broker>): void {
   const brokers = getBrokers();
-  const idx = brokers.findIndex((b) => b.id === brokerId);
+  const idx = brokers.findIndex((b) => b.id === id);
   if (idx >= 0) {
     brokers[idx] = { ...brokers[idx], ...updates };
     set(KEYS.brokers, brokers);
   }
 }
 
-// Cold Brokers
 export function getColdBrokers(): ColdBroker[] {
   return get<ColdBroker[]>(KEYS.coldBrokers, []);
 }
@@ -103,25 +87,17 @@ export function updateColdBroker(id: string, updates: Partial<ColdBroker>): void
   }
 }
 
-// Notes
 export function getNotes(): NoteEntry[] {
   return get<NoteEntry[]>(KEYS.notes, []);
 }
 export function setNote(id: string, text: string): void {
   const notes = getNotes();
   const idx = notes.findIndex((n) => n.id === id);
-  if (idx >= 0) {
-    notes[idx].text = text;
-  } else {
-    notes.push({ id, text });
-  }
+  if (idx >= 0) notes[idx].text = text;
+  else notes.push({ id, text });
   set(KEYS.notes, notes);
 }
-export function getNote(id: string): string {
-  return getNotes().find((n) => n.id === id)?.text || '';
-}
 
-// Last Import
 export function getLastImport(): string | null {
   return get<string | null>(KEYS.lastImport, null);
 }
@@ -129,7 +105,6 @@ export function setLastImport(date: string): void {
   set(KEYS.lastImport, date);
 }
 
-// Initialize default brokers if none exist
 export function initDefaultBrokers(): void {
   if (getBrokers().length > 0) return;
   const defaults: Broker[] = [

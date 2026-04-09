@@ -19,23 +19,19 @@ const statusLabels: Record<string, { label: string; color: string }> = {
 };
 
 const DEFAULT_CONTACTS: ColdBroker[] = [
-  // CBRE
   { id: 'zi-1', name: 'Jon Sarkisian', title: 'EVP', firm: 'CBRE', email: 'jon.sarkisian@cbre.com', phone: '(856) 359-9408', mobile: '(609) 257-8100', status: 'new' },
   { id: 'zi-2', name: 'Robert Zwengler', title: 'EVP', firm: 'CBRE', email: 'robert.zwengler@cbre.com', phone: '(215) 516-8979', status: 'new' },
   { id: 'zi-3', name: 'Nick Savage', title: 'SVP', firm: 'CBRE', email: 'nick.savage@cbre.com', phone: '(201) 712-5887', mobile: '(203) 722-6076', status: 'new' },
   { id: 'zi-4', name: 'Elli Klapper', title: 'EVP', firm: 'CBRE', email: 'elli.klapper@cbre.com', phone: '(718) 289-7719', status: 'new' },
   { id: 'zi-5', name: 'Aviva Nussbaum', title: 'VP', firm: 'CBRE', email: 'aviva.nussbaum@cbre.com', phone: '(212) 984-7115', status: 'new' },
-  // Cushman & Wakefield
   { id: 'zi-6', name: 'Frank Caccavo', title: 'EVP', firm: 'Cushman & Wakefield', email: 'frank.caccavo@cushwake.com', phone: '(732) 452-6163', mobile: '(732) 241-0464', status: 'new' },
   { id: 'zi-7', name: 'Meghan McGrath', title: 'SVP', firm: 'Cushman & Wakefield', email: 'megan.mcgrath@cushmanwakefield.com', mobile: '(917) 902-0226', phone: '', status: 'new' },
   { id: 'zi-8', name: 'Charles Parmelli', title: 'EMD', firm: 'Cushman & Wakefield', email: 'cparmelli@cushmanwakefield.com', phone: '(973) 908-6105', status: 'new' },
-  // JLL
   { id: 'zi-9', name: 'Eric Staar', title: 'SVP', firm: 'JLL', email: 'eric.staar@jll.com', phone: '(973) 404-1487', mobile: '(973) 944-8931', status: 'new' },
-  // Newmark
   { id: 'zi-10', name: 'Colby Scruggs', title: 'SVP', firm: 'Newmark', email: 'colby.scruggs@nmrk.com', phone: '(201) 528-0846', status: 'new' },
 ];
 
-function initContacts() {
+function initContacts(): ColdBroker[] {
   const existing = getColdBrokers();
   if (existing.length === 0) {
     setColdBrokers(DEFAULT_CONTACTS);
@@ -55,8 +51,10 @@ function getInitials(name: string): string {
 export default function Contacts() {
   const [contacts, setContacts] = useState<ColdBroker[]>([]);
   const [filterFirm, setFilterFirm] = useState<string>('all');
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     setContacts(initContacts());
   }, []);
 
@@ -65,12 +63,13 @@ export default function Contacts() {
     setContacts(getColdBrokers());
   }
 
+  if (!mounted) return null;
+
   const firms = ['all', ...Array.from(new Set(contacts.map((c) => c.firm)))];
   const filtered = filterFirm === 'all' ? contacts : contacts.filter((c) => c.firm === filterFirm);
 
   return (
     <div className="space-y-4">
-      {/* Firm filter */}
       <div className="flex gap-2 flex-wrap">
         {firms.map((f) => (
           <button
@@ -108,7 +107,7 @@ export default function Contacts() {
                   <p className="text-sm text-gray-500">{contact.title}</p>
                   <div className="mt-2 space-y-0.5 text-sm">
                     <p>
-                      <a href={`mailto:${contact.email}`} className="text-[#1e40af] hover:underline">
+                      <a href={`mailto:${contact.email}`} className="text-[#1e40af] hover:underline break-all">
                         {contact.email}
                       </a>
                     </p>
@@ -118,11 +117,9 @@ export default function Contacts() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#e8e8e0]">
-                <span className={`px-2 py-0.5 rounded text-xs font-medium ${st.color}`}>
-                  {st.label}
-                </span>
-                <div className="flex gap-1.5">
+              <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#e8e8e0] gap-2 flex-wrap">
+                <span className={`px-2 py-0.5 rounded text-xs font-medium ${st.color}`}>{st.label}</span>
+                <div className="flex gap-1.5 flex-wrap">
                   {contact.status === 'new' && (
                     <button
                       onClick={() => changeStatus(contact.id, 'outreach_sent')}
@@ -139,7 +136,7 @@ export default function Contacts() {
                       Mark connected
                     </button>
                   )}
-                  {(contact.status === 'connected' || contact.status === 'new' || contact.status === 'outreach_sent') && (
+                  {contact.status !== 'active_broker' && (
                     <button
                       onClick={() => changeStatus(contact.id, 'active_broker')}
                       className="px-2.5 py-1 text-xs font-medium bg-[#5b21b6] text-white rounded-md hover:bg-[#4c1d95]"

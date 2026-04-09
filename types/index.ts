@@ -18,7 +18,7 @@ export type Broker = {
   name: string;
   firm: string;
   dealCount: number;
-  lastTouch: string; // ISO date
+  lastTouch: string;
   notes: string;
 };
 
@@ -36,12 +36,12 @@ export type ColdBroker = {
 
 export type DoneEntry = {
   id: string;
-  date: string; // ISO date
+  date: string;
 };
 
 export type SnoozedEntry = {
   id: string;
-  until: string; // ISO date
+  until: string;
 };
 
 export type NoteEntry = {
