@@ -1,10 +1,20 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Lead } from '@/types';
-import { getLeads, getDone, getSnoozed, markDone, snoozeLead } from '@/lib/storage';
+import { DailyTask } from '@/types';
+import {
+  getProspects,
+  getBrokers,
+  getPartners,
+  getColdBrokers,
+  getDone,
+  getSnoozed,
+  markDone,
+  snoozeLead,
+  initDefaultBrokers,
+  initDefaultColdBrokers,
+} from '@/lib/storage';
 import { selectDaily5 } from '@/lib/prioritize';
-import { getLeadMessage } from '@/lib/messages';
 
 const channelColors: Record<string, string> = {
   call: 'bg-green-100 text-green-800',
@@ -13,20 +23,31 @@ const channelColors: Record<string, string> = {
   linkedin: 'bg-indigo-100 text-indigo-800',
 };
 
-const sourceLabel = (lead: Lead): string => {
-  if (lead.broker) return 'Broker Intel';
-  if (lead.tier === 1 || lead.tier === 2) return 'Warm';
-  return 'Cold';
+const sourceColors: Record<string, string> = {
+  broker: 'bg-purple-100 text-[#5b21b6]',
+  partner: 'bg-teal-100 text-teal-800',
+  prospect: 'bg-green-100 text-[#059669]',
+  cold_broker: 'bg-blue-100 text-[#1e40af]',
 };
 
-const sourceColors: Record<string, string> = {
-  'Broker Intel': 'bg-purple-100 text-[#5b21b6]',
-  Warm: 'bg-green-100 text-[#059669]',
-  Cold: 'bg-gray-100 text-gray-600',
+const sourceDisplayLabel: Record<string, string> = {
+  broker: 'Broker',
+  partner: 'Referral Partner',
+  prospect: 'Prospect',
+  cold_broker: 'New Broker',
 };
+
+function motivational(done: number, total: number): string {
+  if (total === 0) return 'Nothing queued';
+  if (done === 0) return "Let's go";
+  if (done === total) return 'All done — nice work';
+  if (done >= total - 1) return 'Almost there';
+  if (done >= Math.ceil(total / 2)) return 'Halfway there';
+  return 'Keep going';
+}
 
 export default function DoThisNow() {
-  const [tasks, setTasks] = useState<Lead[]>([]);
+  const [tasks, setTasks] = useState<DailyTask[]>([]);
   const [doneIds, setDoneIds] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -34,17 +55,30 @@ export default function DoThisNow() {
 
   useEffect(() => {
     setMounted(true);
+    initDefaultBrokers();
+    initDefaultColdBrokers();
     loadTasks();
   }, []);
 
   function loadTasks() {
-    const leads = getLeads();
+    const prospects = getProspects();
+    const brokers = getBrokers();
+    const partners = getPartners();
+    const coldBrokers = getColdBrokers();
     const today = new Date().toISOString().split('T')[0];
     const done = getDone().filter((d) => d.date === today).map((d) => d.id);
     const snoozed = getSnoozed().filter((s) => s.until > today).map((s) => s.id);
 
     setDoneIds(new Set(done));
-    setTasks(selectDaily5(leads, new Set(done), new Set(snoozed)));
+    const selected = selectDaily5(
+      prospects,
+      brokers,
+      partners,
+      coldBrokers,
+      new Set(done),
+      new Set(snoozed)
+    );
+    setTasks(selected);
   }
 
   function handleDone(id: string) {
@@ -74,7 +108,7 @@ export default function DoThisNow() {
         <div className="flex justify-between items-center mb-2">
           <span className="text-sm font-medium">Today&apos;s Progress</span>
           <span className="text-sm text-gray-500">
-            {doneCount} of {tasks.length} done
+            {doneCount} of {tasks.length} done — {motivational(doneCount, tasks.length)}
           </span>
         </div>
         <div className="w-full bg-gray-200 rounded-full h-2">
@@ -94,8 +128,6 @@ export default function DoThisNow() {
       {tasks.map((task, idx) => {
         const isDone = doneIds.has(task.id);
         const isExpanded = expanded === task.id;
-        const message = getLeadMessage(task);
-        const source = sourceLabel(task);
 
         return (
           <div
@@ -114,15 +146,18 @@ export default function DoThisNow() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-[#1a1a1a] truncate">{task.company}</span>
-                    <span className="text-gray-500 text-sm truncate">{task.contact}</span>
+                    <span className="font-semibold text-[#1a1a1a] truncate">{task.name}</span>
+                    <span className="text-gray-500 text-sm truncate">{task.company}</span>
                   </div>
-                  <div className="flex gap-2 mt-1.5">
+                  <div className="flex gap-2 mt-1.5 flex-wrap">
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${sourceColors[task.source]}`}>
+                      {sourceDisplayLabel[task.source]}
+                    </span>
                     <span className={`px-2 py-0.5 rounded text-xs font-medium ${channelColors[task.channel]}`}>
                       {task.channel.charAt(0).toUpperCase() + task.channel.slice(1)}
                     </span>
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${sourceColors[source]}`}>
-                      {source}
+                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                      {task.label}
                     </span>
                     {isDone && (
                       <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
@@ -136,19 +171,19 @@ export default function DoThisNow() {
 
             {isExpanded && (
               <div className="px-4 pb-4 border-t border-[#e8e8e0] pt-3 space-y-3">
-                {task.comments && (
+                {task.context && (
                   <div>
-                    <p className="text-xs font-medium text-gray-500 mb-1">Intel</p>
-                    <p className="text-sm text-gray-700">{task.comments}</p>
+                    <p className="text-xs font-medium text-gray-500 mb-1">Context</p>
+                    <p className="text-sm text-gray-700">{task.context}</p>
                   </div>
                 )}
                 <div>
                   <p className="text-xs font-medium text-gray-500 mb-1">Message</p>
-                  <div className="bg-gray-50 rounded-lg p-3 text-sm whitespace-pre-wrap">{message}</div>
+                  <div className="bg-gray-50 rounded-lg p-3 text-sm whitespace-pre-wrap">{task.message}</div>
                 </div>
                 <div className="flex gap-2 flex-wrap">
                   <button
-                    onClick={() => copyMessage(message, task.id)}
+                    onClick={() => copyMessage(task.message, task.id)}
                     className="px-3 py-1.5 text-xs font-medium bg-[#1a1a1a] text-white rounded-md hover:bg-[#333]"
                   >
                     {copied === task.id ? 'Copied!' : 'Copy message'}

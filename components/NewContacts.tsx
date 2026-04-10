@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { ColdBroker } from '@/types';
-import { getColdBrokers, setColdBrokers, updateColdBroker } from '@/lib/storage';
+import { getColdBrokers, updateColdBroker, initDefaultColdBrokers } from '@/lib/storage';
 
 const firmColors: Record<string, string> = {
   CBRE: 'bg-green-100 text-green-800',
@@ -18,28 +18,6 @@ const statusLabels: Record<string, { label: string; color: string }> = {
   active_broker: { label: 'Active Broker', color: 'bg-purple-100 text-[#5b21b6]' },
 };
 
-const DEFAULT_CONTACTS: ColdBroker[] = [
-  { id: 'zi-1', name: 'Jon Sarkisian', title: 'EVP', firm: 'CBRE', email: 'jon.sarkisian@cbre.com', phone: '(856) 359-9408', mobile: '(609) 257-8100', status: 'new' },
-  { id: 'zi-2', name: 'Robert Zwengler', title: 'EVP', firm: 'CBRE', email: 'robert.zwengler@cbre.com', phone: '(215) 516-8979', status: 'new' },
-  { id: 'zi-3', name: 'Nick Savage', title: 'SVP', firm: 'CBRE', email: 'nick.savage@cbre.com', phone: '(201) 712-5887', mobile: '(203) 722-6076', status: 'new' },
-  { id: 'zi-4', name: 'Elli Klapper', title: 'EVP', firm: 'CBRE', email: 'elli.klapper@cbre.com', phone: '(718) 289-7719', status: 'new' },
-  { id: 'zi-5', name: 'Aviva Nussbaum', title: 'VP', firm: 'CBRE', email: 'aviva.nussbaum@cbre.com', phone: '(212) 984-7115', status: 'new' },
-  { id: 'zi-6', name: 'Frank Caccavo', title: 'EVP', firm: 'Cushman & Wakefield', email: 'frank.caccavo@cushwake.com', phone: '(732) 452-6163', mobile: '(732) 241-0464', status: 'new' },
-  { id: 'zi-7', name: 'Meghan McGrath', title: 'SVP', firm: 'Cushman & Wakefield', email: 'megan.mcgrath@cushmanwakefield.com', mobile: '(917) 902-0226', phone: '', status: 'new' },
-  { id: 'zi-8', name: 'Charles Parmelli', title: 'EMD', firm: 'Cushman & Wakefield', email: 'cparmelli@cushmanwakefield.com', phone: '(973) 908-6105', status: 'new' },
-  { id: 'zi-9', name: 'Eric Staar', title: 'SVP', firm: 'JLL', email: 'eric.staar@jll.com', phone: '(973) 404-1487', mobile: '(973) 944-8931', status: 'new' },
-  { id: 'zi-10', name: 'Colby Scruggs', title: 'SVP', firm: 'Newmark', email: 'colby.scruggs@nmrk.com', phone: '(201) 528-0846', status: 'new' },
-];
-
-function initContacts(): ColdBroker[] {
-  const existing = getColdBrokers();
-  if (existing.length === 0) {
-    setColdBrokers(DEFAULT_CONTACTS);
-    return DEFAULT_CONTACTS;
-  }
-  return existing;
-}
-
 function getInitials(name: string): string {
   return name
     .split(' ')
@@ -48,14 +26,15 @@ function getInitials(name: string): string {
     .toUpperCase();
 }
 
-export default function Contacts() {
+export default function NewContacts() {
   const [contacts, setContacts] = useState<ColdBroker[]>([]);
   const [filterFirm, setFilterFirm] = useState<string>('all');
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
-    setContacts(initContacts());
+    initDefaultColdBrokers();
+    setContacts(getColdBrokers());
   }, []);
 
   function changeStatus(id: string, status: ColdBroker['status']) {

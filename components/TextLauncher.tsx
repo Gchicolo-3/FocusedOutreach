@@ -1,23 +1,36 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getLeads, getBrokers, initDefaultBrokers } from '@/lib/storage';
-import { getLeadMessage, getBrokerNurtureText, getColdBrokerIntro } from '@/lib/messages';
+import {
+  getProspects,
+  getBrokers,
+  getPartners,
+  initDefaultBrokers,
+  getTextSent,
+  markTextSent,
+} from '@/lib/storage';
+import { getLeadMessage, getBrokerNurtureText, getPartnerNurtureText } from '@/lib/messages';
 
 type TextCard = {
   id: string;
   contactName: string;
   context: string;
   message: string;
-  category: 'broker-nurture' | 'prospect-followup' | 'cold-intro';
+  category: 'broker-nurture' | 'partner-nurture' | 'prospect-followup';
   sent: boolean;
   sentAt?: string;
 };
 
 const categoryLabels: Record<string, string> = {
   'broker-nurture': 'Broker Nurture',
+  'partner-nurture': 'Referral Partner',
   'prospect-followup': 'Prospect Follow-up',
-  'cold-intro': 'New Broker Intro',
+};
+
+const categoryColors: Record<string, string> = {
+  'broker-nurture': 'bg-purple-100 text-[#5b21b6]',
+  'partner-nurture': 'bg-teal-100 text-teal-800',
+  'prospect-followup': 'bg-green-100 text-[#059669]',
 };
 
 export default function TextLauncher() {
@@ -34,21 +47,33 @@ export default function TextLauncher() {
 
   function buildCards() {
     const brokers = getBrokers();
-    const leads = getLeads();
+    const partners = getPartners();
+    const prospects = getProspects();
     const allCards: TextCard[] = [];
 
     brokers.forEach((b) => {
       allCards.push({
         id: `bnurture-${b.id}`,
-        contactName: b.name,
-        context: `${b.firm} — ${b.dealCount} deals`,
+        contactName: `${b.firstName} ${b.lastName}`,
+        context: `${b.firm} — Tier ${b.tier}`,
         message: getBrokerNurtureText(b),
         category: 'broker-nurture',
         sent: false,
       });
     });
 
-    leads
+    partners.forEach((p) => {
+      allCards.push({
+        id: `pnurture-${p.id}`,
+        contactName: `${p.firstName} ${p.lastName}`,
+        context: `${p.company} — Tier ${p.tier}`,
+        message: getPartnerNurtureText(p),
+        category: 'partner-nurture',
+        sent: false,
+      });
+    });
+
+    prospects
       .filter((l) => l.tier === 1 || l.tier === 2)
       .slice(0, 10)
       .forEach((l) => {
@@ -63,20 +88,7 @@ export default function TextLauncher() {
         });
       });
 
-    brokers
-      .filter((b) => !b.lastTouch)
-      .forEach((b) => {
-        allCards.push({
-          id: `coldintro-${b.id}`,
-          contactName: b.name,
-          context: `New intro — ${b.firm}`,
-          message: getColdBrokerIntro(b.name, b.firm),
-          category: 'cold-intro',
-          sent: false,
-        });
-      });
-
-    const sentData = JSON.parse(localStorage.getItem('fs_text_sent') || '{}');
+    const sentData = getTextSent();
     allCards.forEach((c) => {
       if (sentData[c.id]) {
         c.sent = true;
@@ -94,11 +106,11 @@ export default function TextLauncher() {
   }
 
   function markSent(id: string) {
-    const now = new Date().toISOString();
-    const sentData = JSON.parse(localStorage.getItem('fs_text_sent') || '{}');
-    sentData[id] = now;
-    localStorage.setItem('fs_text_sent', JSON.stringify(sentData));
-    setCards((prev) => prev.map((c) => (c.id === id ? { ...c, sent: true, sentAt: now } : c)));
+    markTextSent(id);
+    const sentData = getTextSent();
+    setCards((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, sent: true, sentAt: sentData[id] } : c))
+    );
   }
 
   if (!mounted) return null;
@@ -108,7 +120,7 @@ export default function TextLauncher() {
   return (
     <div className="space-y-4">
       <div className="flex gap-2 flex-wrap">
-        {['all', 'broker-nurture', 'prospect-followup', 'cold-intro'].map((f) => (
+        {['all', 'broker-nurture', 'partner-nurture', 'prospect-followup'].map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -139,15 +151,7 @@ export default function TextLauncher() {
               <span className="font-semibold">{card.contactName}</span>
               <span className="text-sm text-gray-500 ml-2">{card.context}</span>
             </div>
-            <span
-              className={`flex-shrink-0 px-2 py-0.5 rounded text-xs font-medium ${
-                card.category === 'broker-nurture'
-                  ? 'bg-purple-100 text-[#5b21b6]'
-                  : card.category === 'prospect-followup'
-                    ? 'bg-green-100 text-[#059669]'
-                    : 'bg-blue-100 text-[#1e40af]'
-              }`}
-            >
+            <span className={`flex-shrink-0 px-2 py-0.5 rounded text-xs font-medium ${categoryColors[card.category]}`}>
               {categoryLabels[card.category]}
             </span>
           </div>

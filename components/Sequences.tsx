@@ -18,6 +18,18 @@ const sequences: Sequence[] = [
     ],
   },
   {
+    name: 'Referral Partner Nurture (45-day rolling)',
+    totalDays: 45,
+    steps: [
+      { day: 1, channel: 'text', auto: false, message: 'Friendly hello text. Just checking in, no ask. Build relationship equity.' },
+      { day: 7, channel: 'linkedin', auto: false, message: 'Engage with their LinkedIn content — comment or share something they posted.' },
+      { day: 15, channel: 'email', auto: false, message: 'Value-add email. Share something useful relevant to their profession (market report, case study, article).' },
+      { day: 25, channel: 'text', auto: false, message: 'Casual check-in. "Hope business is good — any clients working through a move lately?"' },
+      { day: 35, channel: 'email', auto: false, message: 'Offer to help on any specific client situation. Keep it no-pressure.' },
+      { day: 45, channel: 'call', auto: false, message: 'Coffee or lunch ask. Reset the 45-day cycle.' },
+    ],
+  },
+  {
     name: 'New Broker Cold Outreach (21-day)',
     totalDays: 21,
     steps: [
