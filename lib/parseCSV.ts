@@ -9,10 +9,6 @@ export type ParsedImport = {
   uncategorized: UncategorizedContact[];
 };
 
-function generateId(company: string, contact: string): string {
-  return `${company}-${contact}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
-}
-
 function parseCSVLine(line: string): string[] {
   const fields: string[] = [];
   let current = '';
@@ -41,6 +37,11 @@ function parseCSVLine(line: string): string[] {
 type ColumnKey =
   | 'company'
   | 'contact'
+  | 'firstName'
+  | 'lastName'
+  | 'email'
+  | 'mobile'
+  | 'phone'
   | 'subject'
   | 'activityType'
   | 'date'
@@ -50,23 +51,120 @@ type ColumnKey =
   | 'focusType';
 
 const COLUMN_MAP: Record<string, ColumnKey> = {
-  company: 'company',
-  account: 'company',
+  // New simplified format
+  'subject': 'subject',
+  'first name': 'firstName',
+  'firstname': 'firstName',
+  'last name': 'lastName',
+  'lastname': 'lastName',
+  'email': 'email',
+  'mobile': 'mobile',
+  'phone': 'phone',
+  'phone number': 'phone',
+  'contact type': 'focusType',
+  // Legacy SF activity export format
+  'company': 'company',
+  'account': 'company',
   'account name': 'company',
-  contact: 'contact',
+  'contact': 'contact',
   'contact name': 'contact',
-  subject: 'subject',
   'activity type': 'activityType',
-  activitytype: 'activityType',
-  date: 'date',
+  'activitytype': 'activityType',
+  'date': 'date',
   'activity date': 'date',
-  status: 'status',
-  priority: 'priority',
-  comments: 'comments',
+  'status': 'status',
+  'priority': 'priority',
+  'comments': 'comments',
   'focus_type__c': 'focusType',
   'focus type': 'focusType',
   'focus_type': 'focusType',
 };
+
+const FIRM_MAP: Record<string, string> = {
+  'cbre.com': 'CBRE',
+  'jll.com': 'JLL',
+  'am.jll.com': 'JLL',
+  'cushwake.com': 'Cushman & Wakefield',
+  'cushmanwakefield.com': 'Cushman & Wakefield',
+  'nmrk.com': 'Newmark',
+  'newmarkrealestate.com': 'Newmark',
+  'ngkf.com': 'Newmark Knight Frank',
+  'savills.us': 'Savills',
+  'colliers.com': 'Colliers',
+  'avisonyoung.com': 'Avison Young',
+  'lee-associates.com': 'Lee & Associates',
+  'marcusmillichap.com': 'Marcus & Millichap',
+  'kw.com': 'Keller Williams',
+  'kwcommercial.com': 'KW Commercial',
+  'cbrealty.com': 'Coldwell Banker',
+  'coldwellbankermoves.com': 'Coldwell Banker',
+  'cbmoves.com': 'Coldwell Banker',
+  'foxroach.com': 'BHHS Fox & Roach',
+  'bhhspro.com': 'Berkshire Hathaway',
+  'remax.com': 'RE/MAX',
+  'remax.net': 'RE/MAX',
+  'blauberg.com': 'Blau & Berg',
+  'triforcecre.com': 'Triforce Commercial',
+  'cedarcrestpm.com': 'Cedarcrest PM',
+  'cedarcrestpropertymanagement.com': 'Cedarcrest PM',
+  'mrhrealestate.com': 'MRH Real Estate',
+  'naihanson.com': 'NAI Hanson',
+  'naidb.com': 'NAI DiLeo-Bram',
+  'cresa.com': 'Cresa',
+  'sheldongrossrealty.com': 'Sheldon Gross Realty',
+  'resource-realty.com': 'Resource Realty',
+  'resourcesrealestate.com': 'Resources Real Estate',
+  'silbertrealestate.com': 'Silbert Real Estate',
+  'weichertcommercial.com': 'Weichert Commercial',
+  'weichert.com': 'Weichert',
+  'sitarcompany.com': 'The Sitar Company',
+  'rarefiedrep.com': 'Rarefied Rep',
+  'tocr.com': 'The Outerbridge Company',
+  'compass.com': 'Compass',
+  'jrmcm.com': 'JRM Construction Management',
+};
+
+function firmFromEmail(email: string): string {
+  if (!email || email.toLowerCase() === 'nan') return '';
+  const domain = email.split('@')[1]?.toLowerCase().trim();
+  if (!domain) return '';
+  if (FIRM_MAP[domain]) return FIRM_MAP[domain];
+  const base = domain.split('.')[0];
+  return base.charAt(0).toUpperCase() + base.slice(1);
+}
+
+function cleanValue(v: string): string {
+  if (!v) return '';
+  const t = v.trim();
+  if (t.toLowerCase() === 'nan') return '';
+  return t;
+}
+
+function normalizeContactType(raw: string): ContactType {
+  const v = cleanValue(raw).toLowerCase();
+  if (!v) return 'uncategorized';
+  if (v.includes('referral')) return 'referral_partner';
+  if (v.includes('broker') || v.includes('property manager')) return 'broker';
+  if (v.includes('prospect') || v.includes('client')) return 'prospect';
+  if (v === 'uncategorized') return 'uncategorized';
+  return 'uncategorized';
+}
+
+function splitName(fullName: string): { firstName: string; lastName: string } {
+  const parts = cleanValue(fullName).split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { firstName: '', lastName: '' };
+  if (parts.length === 1) return { firstName: parts[0], lastName: '' };
+  return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
+}
+
+function generateId(email: string, firstName: string, lastName: string, company: string): string {
+  const cleaned = cleanValue(email);
+  if (cleaned && cleaned.includes('@')) {
+    return cleaned.toLowerCase().replace(/[^a-z0-9]/g, '_');
+  }
+  const base = `${firstName}-${lastName}-${company}`.toLowerCase().replace(/[^a-z0-9]/g, '-');
+  return base || `contact-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 const BROKER_NAMES = [
   'Peter Shikar', 'Brenden McBride', 'Joe DeVries', 'Melissa Isman',
@@ -87,21 +185,6 @@ function extractBroker(comments: string): string | undefined {
   return undefined;
 }
 
-function normalizeContactType(raw: string): ContactType {
-  const v = (raw || '').toLowerCase().trim();
-  if (v === 'prospect') return 'prospect';
-  if (v === 'broker') return 'broker';
-  if (v === 'referral partner' || v === 'referral_partner' || v === 'referral') return 'referral_partner';
-  return 'uncategorized';
-}
-
-function splitName(fullName: string): { firstName: string; lastName: string } {
-  const parts = fullName.trim().split(/\s+/);
-  if (parts.length === 0) return { firstName: '', lastName: '' };
-  if (parts.length === 1) return { firstName: parts[0], lastName: '' };
-  return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
-}
-
 export function parseCSV(csvText: string, existingTags: Map<string, ContactType> = new Map()): ParsedImport {
   const result: ParsedImport = {
     prospects: [],
@@ -110,8 +193,16 @@ export function parseCSV(csvText: string, existingTags: Map<string, ContactType>
     uncategorized: [],
   };
 
+  if (!csvText) {
+    console.warn('[parseCSV] empty csvText');
+    return result;
+  }
+
   const lines = csvText.split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length < 2) return result;
+  if (lines.length < 2) {
+    console.warn('[parseCSV] not enough lines:', lines.length);
+    return result;
+  }
 
   const headers = parseCSVLine(lines[0]).map((h) => h.toLowerCase().trim());
   const columnIndices: Partial<Record<ColumnKey, number>> = {};
@@ -120,32 +211,51 @@ export function parseCSV(csvText: string, existingTags: Map<string, ContactType>
     if (mapped) columnIndices[mapped] = idx;
   });
 
+  console.log('[parseCSV] headers:', headers);
+  console.log('[parseCSV] mapped columns:', columnIndices);
+
   for (let i = 1; i < lines.length; i++) {
     const fields = parseCSVLine(lines[i]);
-    if (fields.length < 2) continue;
+    if (fields.length < 1) continue;
 
     const getValue = (key: ColumnKey): string => {
       const idx = columnIndices[key];
-      return idx !== undefined && idx < fields.length ? fields[idx] : '';
+      return idx !== undefined && idx < fields.length ? cleanValue(fields[idx]) : '';
     };
 
-    const company = getValue('company');
-    const contact = getValue('contact');
-    if (!company && !contact) continue;
+    const csvFirstName = getValue('firstName');
+    const csvLastName = getValue('lastName');
+    const csvContact = getValue('contact');
+    const email = getValue('email');
+    const mobile = getValue('mobile') || getValue('phone');
 
-    const id = generateId(company, contact);
-    const comments = getValue('comments');
+    // Resolve first/last name from either separate columns or combined contact
+    let firstName = csvFirstName;
+    let lastName = csvLastName;
+    if (!firstName && !lastName && csvContact) {
+      const split = splitName(csvContact);
+      firstName = split.firstName;
+      lastName = split.lastName;
+    }
+
+    if (!firstName && !lastName && !email) continue;
+
+    const fullName = csvContact || `${firstName} ${lastName}`.trim();
+    const company = getValue('company') || firmFromEmail(email);
+    const subject = getValue('subject');
+    const comments = getValue('comments') || subject;
+
+    const id = generateId(email, firstName, lastName, company);
     const csvType = normalizeContactType(getValue('focusType'));
-    // localStorage user tag overrides CSV type
     const type: ContactType = existingTags.get(id) || csvType;
 
     if (type === 'prospect') {
       const broker = extractBroker(comments);
       const lead: Lead = {
         id,
-        company,
-        contact,
-        subject: getValue('subject'),
+        company: company || 'Unknown',
+        contact: fullName,
+        subject,
         activityType: getValue('activityType'),
         date: getValue('date'),
         status: getValue('status'),
@@ -160,45 +270,47 @@ export function parseCSV(csvText: string, existingTags: Map<string, ContactType>
       lead.channel = assignChannel(lead);
       result.prospects.push(lead);
     } else if (type === 'broker') {
-      const { firstName, lastName } = splitName(contact);
       const tier = defaultTierForBroker(0);
       const lastTouch = getValue('date') || '';
       result.brokers.push({
         id,
         firstName,
         lastName,
-        firm: company,
+        firm: company || 'Unknown',
         title: 'Broker',
+        email: email || undefined,
+        mobile: mobile || undefined,
         tier,
         dealCount: 0,
         dealNames: [],
         lastTouch,
         nextDue: computeNextDue(lastTouch, tier),
-        notes: '',
+        notes: subject || '',
         status: computeStatus(lastTouch, tier),
       });
     } else if (type === 'referral_partner') {
-      const { firstName, lastName } = splitName(contact);
       const tier = defaultTierForPartner('other');
       const lastTouch = getValue('date') || '';
       result.partners.push({
         id,
         firstName,
         lastName,
-        company,
+        company: company || 'Unknown',
         title: '',
         partnerType: 'other',
         tier,
         referralCount: 0,
         lastTouch,
         nextDue: computeNextDue(lastTouch, tier),
-        notes: '',
+        notes: subject || '',
+        email: email || undefined,
+        phone: mobile || undefined,
       });
     } else {
       result.uncategorized.push({
         id,
-        company,
-        contact,
+        company: company || 'Unknown',
+        contact: fullName,
         comments,
       });
     }
