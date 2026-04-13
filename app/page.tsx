@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import TabNav, { TabId } from '@/components/TabNav';
 import Header from '@/components/Header';
 import DoThisNow from '@/components/DoThisNow';
@@ -13,9 +13,24 @@ import NewContacts from '@/components/NewContacts';
 export default function Home() {
   const [tab, setTab] = useState<TabId>('do-this-now');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   function handleImport() {
     setRefreshKey((k) => k + 1);
+  }
+
+  // Prevent any server/client hydration mismatch in the tab-rendered subtree
+  // by only rendering the interactive app after mount.
+  if (!mounted) {
+    return (
+      <div className="min-h-screen">
+        <Header onImport={handleImport} refreshKey={refreshKey} />
+      </div>
+    );
   }
 
   return (

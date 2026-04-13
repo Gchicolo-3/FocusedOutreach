@@ -34,6 +34,7 @@ export default function Header({ onImport, refreshKey }: { onImport: () => void;
   const [lastImport, setLastImportState] = useState<string | null>(null);
   const [lastActivity, setLastActivityState] = useState<string | null>(null);
   const [stats, setStats] = useState({ prospects: 0, brokers: 0, partners: 0 });
+  const [today, setToday] = useState('');
 
   useEffect(() => {
     setMounted(true);
@@ -44,13 +45,14 @@ export default function Header({ onImport, refreshKey }: { onImport: () => void;
       brokers: getBrokers().length,
       partners: getPartners().length,
     });
+    setToday(
+      new Date().toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+      })
+    );
   }, [refreshKey]);
-
-  const today = new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  });
 
   return (
     <header className="border-b border-[var(--border)] px-6 py-5" style={{ background: 'var(--bg)' }}>
@@ -62,8 +64,12 @@ export default function Header({ onImport, refreshKey }: { onImport: () => void;
             </h1>
             <div className="flex items-center gap-4 mt-1 flex-wrap">
               <span className="label-mono">Prospecting OS</span>
-              <span className="label-mono" style={{ color: 'var(--muted2)' }}>·</span>
-              <span className="label-mono">{today}</span>
+              {mounted && today && (
+                <>
+                  <span className="label-mono" style={{ color: 'var(--muted2)' }}>·</span>
+                  <span className="label-mono">{today}</span>
+                </>
+              )}
               <LiveClock />
             </div>
           </div>
