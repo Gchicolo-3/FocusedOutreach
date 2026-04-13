@@ -15,16 +15,16 @@ import {
 import { getBrokerNurtureText, getBrokerNurtureEmail, getBrokerLinkedIn } from '@/lib/messages';
 import { computeStatus } from '@/lib/cadence';
 
-const tierColors: Record<RelationshipTier, string> = {
-  A: 'bg-purple-200 text-[#5b21b6]',
-  B: 'bg-blue-100 text-blue-800',
-  C: 'bg-gray-100 text-gray-700',
+const tierPill: Record<RelationshipTier, string> = {
+  A: 'pill-purple',
+  B: 'pill-teal',
+  C: 'pill-amber',
 };
 
-const statusPill: Record<string, { label: string; color: string }> = {
-  overdue: { label: 'Overdue', color: 'bg-red-100 text-[#dc2626]' },
-  due_soon: { label: 'Due this week', color: 'bg-amber-100 text-amber-700' },
-  on_track: { label: 'On track', color: 'bg-green-100 text-[#059669]' },
+const statusPill: Record<string, { label: string; className: string }> = {
+  overdue: { label: 'Overdue', className: 'pill-red' },
+  due_soon: { label: 'Due soon', className: 'pill-amber' },
+  on_track: { label: 'On track', className: 'pill-accent' },
 };
 
 function getInitials(firstName: string, lastName: string): string {
@@ -104,73 +104,75 @@ export default function BrokerEngine() {
 
   if (!mounted) return null;
 
-  // Sort brokers: overdue first, then Tier A, then by lastTouch ascending
   const sortedBrokers = [...brokers].sort((a, b) => {
-    const statusOrder: Record<string, number> = { overdue: 0, due_soon: 1, on_track: 2 };
-    const sa = statusOrder[computeStatus(a.lastTouch, a.tier)];
-    const sb = statusOrder[computeStatus(b.lastTouch, b.tier)];
+    const order: Record<string, number> = { overdue: 0, due_soon: 1, on_track: 2 };
+    const sa = order[computeStatus(a.lastTouch, a.tier)];
+    const sb = order[computeStatus(b.lastTouch, b.tier)];
     if (sa !== sb) return sa - sb;
     const tierOrder = { A: 0, B: 1, C: 2 };
     return tierOrder[a.tier] - tierOrder[b.tier];
   });
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold mb-3">Active Brokers</h2>
+    <div className="space-y-8">
+      <section className="fade-up">
+        <div className="flex items-baseline justify-between mb-4">
+          <h2 className="font-display text-xl font-bold">Active Brokers</h2>
+          <span className="label-mono">{sortedBrokers.length} total</span>
+        </div>
         <div className="space-y-3">
-          {sortedBrokers.map((broker) => {
+          {sortedBrokers.map((broker, idx) => {
             const status = computeStatus(broker.lastTouch, broker.tier);
             const sp = statusPill[status];
             const isExpanded = expanded === broker.id;
+            const fadeClass = `fade-up-${Math.min(idx + 1, 5)}`;
             return (
-              <div key={broker.id} className="bg-white rounded-lg border border-[#e8e8e0]">
-                <button
-                  onClick={() => setExpanded(isExpanded ? null : broker.id)}
-                  className="w-full p-4 text-left"
-                >
+              <div key={broker.id} className={`card card-hover ${fadeClass}`}>
+                <button onClick={() => setExpanded(isExpanded ? null : broker.id)} className="w-full p-5 text-left">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3 min-w-0">
-                      <div className="flex-shrink-0 w-10 h-10 rounded-full bg-[#5b21b6] text-white flex items-center justify-center text-sm font-bold">
+                      <div
+                        className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-sm font-display font-bold"
+                        style={{ background: 'var(--purple-bg)', color: 'var(--purple)' }}
+                      >
                         {getInitials(broker.firstName, broker.lastName)}
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold">
+                          <span className="font-display font-semibold text-base">
                             {broker.firstName} {broker.lastName}
                           </span>
-                          <span className="text-sm text-gray-500">{broker.firm}</span>
-                          <span className={`px-2 py-0.5 rounded text-xs font-bold ${tierColors[broker.tier]}`}>
-                            Tier {broker.tier}
-                          </span>
+                          <span className={`pill ${tierPill[broker.tier]}`}>Tier {broker.tier}</span>
                         </div>
-                        <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
-                          <span>{broker.dealCount} deals</span>
-                          <span>Last: {broker.lastTouch || 'Never'}</span>
-                          <span>Next due: {broker.nextDue || 'ASAP'}</span>
+                        <div className="flex items-center gap-3 mt-1 flex-wrap">
+                          <span className="label-mono">{broker.firm}</span>
+                          <span className="label-mono" style={{ color: 'var(--muted2)' }}>·</span>
+                          <span className="label-mono">{broker.dealCount} deals</span>
+                          <span className="label-mono" style={{ color: 'var(--muted2)' }}>·</span>
+                          <span className="label-mono">
+                            Last {broker.lastTouch || 'never'}
+                          </span>
+                          <span className="label-mono" style={{ color: 'var(--muted2)' }}>·</span>
+                          <span className="label-mono">
+                            Due {broker.nextDue || 'ASAP'}
+                          </span>
                         </div>
                       </div>
                     </div>
-                    <span className={`flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${sp.color}`}>
-                      {sp.label}
-                    </span>
+                    <span className={`pill ${sp.className} flex-shrink-0`}>{sp.label}</span>
                   </div>
                 </button>
 
                 {isExpanded && (
-                  <div className="px-4 pb-4 border-t border-[#e8e8e0] pt-3 space-y-3">
+                  <div className="px-5 pb-5 border-t border-[var(--border)] pt-4 space-y-4">
                     <div>
-                      <p className="text-xs font-medium text-gray-500 mb-1">Tier</p>
+                      <div className="label-mono mb-2">Tier</div>
                       <div className="flex gap-2">
                         {(['A', 'B', 'C'] as RelationshipTier[]).map((t) => (
                           <button
                             key={t}
                             onClick={() => changeTier(broker.id, t)}
-                            className={`px-3 py-1 text-xs font-medium rounded-md ${
-                              broker.tier === t
-                                ? tierColors[t]
-                                : 'bg-white border border-[#e8e8e0] text-gray-600 hover:bg-gray-50'
-                            }`}
+                            className={broker.tier === t ? 'btn-primary' : 'btn-ghost'}
                           >
                             Tier {t}
                           </button>
@@ -178,95 +180,94 @@ export default function BrokerEngine() {
                       </div>
                     </div>
                     <div className="flex gap-2 flex-wrap">
-                      <button
-                        onClick={() => logTouch(broker.id)}
-                        className="px-3 py-1.5 text-xs font-medium bg-[#059669] text-white rounded-md hover:bg-[#047857]"
-                      >
+                      <button onClick={() => logTouch(broker.id)} className="btn-primary">
                         Log touch today
                       </button>
                       <button
                         onClick={() => copyText(getBrokerNurtureText(broker), `${broker.id}-text`)}
-                        className="px-3 py-1.5 text-xs font-medium bg-[#1a1a1a] text-white rounded-md hover:bg-[#333]"
+                        className="btn-secondary"
                       >
-                        {copied === `${broker.id}-text` ? 'Copied!' : 'Copy text'}
+                        {copied === `${broker.id}-text` ? 'Copied' : 'Copy text'}
                       </button>
                       <button
                         onClick={() => copyText(getBrokerNurtureEmail(broker), `${broker.id}-email`)}
-                        className="px-3 py-1.5 text-xs font-medium bg-[#5b21b6] text-white rounded-md hover:bg-[#4c1d95]"
+                        className="btn-secondary"
                       >
-                        {copied === `${broker.id}-email` ? 'Copied!' : 'Copy email'}
+                        {copied === `${broker.id}-email` ? 'Copied' : 'Copy email'}
                       </button>
                       <button
                         onClick={() => copyText(getBrokerLinkedIn(broker), `${broker.id}-li`)}
-                        className="px-3 py-1.5 text-xs font-medium bg-[#1e40af] text-white rounded-md hover:bg-[#1e3a8a]"
+                        className="btn-secondary"
                       >
-                        {copied === `${broker.id}-li` ? 'Copied!' : 'Copy LinkedIn'}
+                        {copied === `${broker.id}-li` ? 'Copied' : 'Copy LinkedIn'}
                       </button>
                     </div>
-                    <textarea
-                      placeholder="Add notes..."
-                      value={notes[broker.id] ?? broker.notes}
-                      onChange={(e) => handleNoteChange(broker.id, e.target.value)}
-                      className="w-full border border-[#e8e8e0] rounded-md p-2 text-sm resize-none h-20"
-                    />
+                    <div>
+                      <div className="label-mono mb-2">Notes</div>
+                      <textarea
+                        placeholder="Add notes..."
+                        value={notes[broker.id] ?? broker.notes}
+                        onChange={(e) => handleNoteChange(broker.id, e.target.value)}
+                        className="resize-none h-20"
+                      />
+                    </div>
                   </div>
                 )}
               </div>
             );
           })}
         </div>
-      </div>
+      </section>
 
       {coldBrokers.length > 0 && (
-        <div>
-          <h2 className="text-lg font-semibold mb-3">Cold Broker Queue</h2>
+        <section>
+          <div className="flex items-baseline justify-between mb-4">
+            <h2 className="font-display text-xl font-bold">Cold Broker Queue</h2>
+            <span className="label-mono">
+              {coldBrokers.filter((c) => c.status !== 'active_broker').length} pending
+            </span>
+          </div>
           <div className="space-y-3">
             {coldBrokers
               .filter((cb) => cb.status !== 'active_broker')
               .map((cb) => (
-                <div key={cb.id} className="bg-white rounded-lg border border-[#e8e8e0] p-4">
+                <div key={cb.id} className="card card-hover p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold">{cb.name}</span>
-                        <span className="text-sm text-gray-500">{cb.title}</span>
+                        <span className="font-display font-semibold">{cb.name}</span>
+                        <span className="label-mono">{cb.title}</span>
                       </div>
-                      <p className="text-sm text-gray-500 mt-0.5">{cb.firm}</p>
-                      <div className="flex gap-3 mt-1 text-xs text-gray-500 flex-wrap">
-                        {cb.email && <span>{cb.email}</span>}
-                        {cb.phone && <span>{cb.phone}</span>}
+                      <div className="flex gap-3 mt-1 flex-wrap">
+                        <span className="label-mono">{cb.firm}</span>
+                        {cb.email && <span className="label-mono">{cb.email}</span>}
+                        {cb.phone && <span className="label-mono">{cb.phone}</span>}
                       </div>
                     </div>
                     <span
-                      className={`flex-shrink-0 px-2 py-0.5 rounded text-xs font-medium ${
+                      className={`pill flex-shrink-0 ${
                         cb.status === 'outreach_sent'
-                          ? 'bg-amber-100 text-amber-700'
+                          ? 'pill-amber'
                           : cb.status === 'connected'
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-blue-100 text-[#1e40af]'
+                            ? 'pill-accent'
+                            : 'pill-blue'
                       }`}
                     >
                       {cb.status === 'outreach_sent' ? 'Outreach Sent' : cb.status === 'connected' ? 'Connected' : 'New'}
                     </span>
                   </div>
-                  <div className="flex gap-2 mt-3 flex-wrap">
-                    <button
-                      onClick={() => addToActive(cb)}
-                      className="px-3 py-1.5 text-xs font-medium bg-[#5b21b6] text-white rounded-md hover:bg-[#4c1d95]"
-                    >
-                      Move to active brokers
+                  <div className="flex gap-2 mt-4 flex-wrap">
+                    <button onClick={() => addToActive(cb)} className="btn-primary">
+                      Move to active
                     </button>
-                    <button
-                      onClick={() => markOutreachSent(cb.id)}
-                      className="px-3 py-1.5 text-xs font-medium bg-[#1a1a1a] text-white rounded-md hover:bg-[#333]"
-                    >
+                    <button onClick={() => markOutreachSent(cb.id)} className="btn-secondary">
                       Mark outreach sent
                     </button>
                   </div>
                 </div>
               ))}
           </div>
-        </div>
+        </section>
       )}
     </div>
   );

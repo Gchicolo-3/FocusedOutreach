@@ -22,15 +22,15 @@ type TextCard = {
 };
 
 const categoryLabels: Record<string, string> = {
-  'broker-nurture': 'Broker Nurture',
-  'partner-nurture': 'Referral Partner',
-  'prospect-followup': 'Prospect Follow-up',
+  'broker-nurture': 'Broker',
+  'partner-nurture': 'Partner',
+  'prospect-followup': 'Prospect',
 };
 
-const categoryColors: Record<string, string> = {
-  'broker-nurture': 'bg-purple-100 text-[#5b21b6]',
-  'partner-nurture': 'bg-teal-100 text-teal-800',
-  'prospect-followup': 'bg-green-100 text-[#059669]',
+const categoryPill: Record<string, string> = {
+  'broker-nurture': 'pill-purple',
+  'partner-nurture': 'pill-teal',
+  'prospect-followup': 'pill-accent',
 };
 
 export default function TextLauncher() {
@@ -55,7 +55,7 @@ export default function TextLauncher() {
       allCards.push({
         id: `bnurture-${b.id}`,
         contactName: `${b.firstName} ${b.lastName}`,
-        context: `${b.firm} — Tier ${b.tier}`,
+        context: `${b.firm} · Tier ${b.tier}`,
         message: getBrokerNurtureText(b),
         category: 'broker-nurture',
         sent: false,
@@ -66,7 +66,7 @@ export default function TextLauncher() {
       allCards.push({
         id: `pnurture-${p.id}`,
         contactName: `${p.firstName} ${p.lastName}`,
-        context: `${p.company} — Tier ${p.tier}`,
+        context: `${p.company} · Tier ${p.tier}`,
         message: getPartnerNurtureText(p),
         category: 'partner-nurture',
         sent: false,
@@ -81,7 +81,7 @@ export default function TextLauncher() {
         allCards.push({
           id: `prospect-${l.id}`,
           contactName: l.contact,
-          context: `${l.company} — Tier ${l.tier}`,
+          context: `${l.company} · Tier ${l.tier}`,
           message: getLeadMessage(textLead),
           category: 'prospect-followup',
           sent: false,
@@ -118,17 +118,18 @@ export default function TextLauncher() {
   const filtered = filter === 'all' ? cards : cards.filter((c) => c.category === filter);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 fade-up">
+      <div className="flex items-baseline justify-between">
+        <h2 className="font-display text-xl font-bold">Text Launcher</h2>
+        <span className="label-mono">{filtered.length} ready</span>
+      </div>
+
       <div className="flex gap-2 flex-wrap">
         {['all', 'broker-nurture', 'partner-nurture', 'prospect-followup'].map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              filter === f
-                ? 'bg-[#1a1a1a] text-white'
-                : 'bg-white text-gray-600 border border-[#e8e8e0] hover:bg-gray-50'
-            }`}
+            className={filter === f ? 'btn-primary' : 'btn-ghost'}
           >
             {f === 'all' ? 'All' : categoryLabels[f]}
           </button>
@@ -136,52 +137,39 @@ export default function TextLauncher() {
       </div>
 
       {filtered.length === 0 && (
-        <div className="bg-white rounded-lg p-8 border border-[#e8e8e0] text-center text-gray-500">
+        <div className="card p-8 text-center" style={{ color: 'var(--muted)' }}>
           No texts to display. Import leads to generate prospect messages.
         </div>
       )}
 
-      {filtered.map((card) => (
-        <div
-          key={card.id}
-          className={`bg-white rounded-lg border border-[#e8e8e0] p-4 ${card.sent ? 'opacity-60' : ''}`}
-        >
-          <div className="flex items-center justify-between mb-2 gap-2">
-            <div className="min-w-0">
-              <span className="font-semibold">{card.contactName}</span>
-              <span className="text-sm text-gray-500 ml-2">{card.context}</span>
+      {filtered.map((card, idx) => {
+        const fadeClass = `fade-up-${Math.min(idx + 1, 5)}`;
+        return (
+          <div key={card.id} className={`card card-hover p-5 ${fadeClass} ${card.sent ? 'opacity-50' : ''}`}>
+            <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+              <div className="min-w-0">
+                <span className="font-display font-semibold">{card.contactName}</span>
+                <span className="label-mono ml-2">{card.context}</span>
+              </div>
+              <span className={`pill ${categoryPill[card.category]}`}>{categoryLabels[card.category]}</span>
             </div>
-            <span className={`flex-shrink-0 px-2 py-0.5 rounded text-xs font-medium ${categoryColors[card.category]}`}>
-              {categoryLabels[card.category]}
-            </span>
-          </div>
 
-          <div className="flex justify-end mb-3">
-            <div className="bg-[#007AFF] text-white rounded-2xl rounded-br-sm px-4 py-2.5 max-w-[85%] text-sm whitespace-pre-wrap">
-              {card.message}
-            </div>
-          </div>
+            <div className="msg-bubble mb-3">{card.message}</div>
 
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-gray-400">{card.message.length} chars</span>
-            <div className="flex gap-2">
-              <button
-                onClick={() => copyMessage(card.message, card.id)}
-                className="px-3 py-1.5 text-xs font-medium bg-[#1a1a1a] text-white rounded-md hover:bg-[#333]"
-              >
-                {copied === card.id ? 'Copied!' : 'Copy'}
-              </button>
-              <button
-                onClick={() => markSent(card.id)}
-                disabled={card.sent}
-                className="px-3 py-1.5 text-xs font-medium bg-[#059669] text-white rounded-md hover:bg-[#047857] disabled:opacity-50"
-              >
-                {card.sent ? 'Sent' : 'Mark sent'}
-              </button>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <span className="label-mono">{card.message.length} chars</span>
+              <div className="flex gap-2">
+                <button onClick={() => copyMessage(card.message, card.id)} className="btn-primary">
+                  {copied === card.id ? 'Copied' : 'Copy'}
+                </button>
+                <button onClick={() => markSent(card.id)} disabled={card.sent} className="btn-secondary">
+                  {card.sent ? 'Sent' : 'Mark sent'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

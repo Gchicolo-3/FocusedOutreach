@@ -11,16 +11,16 @@ import {
 import { getPartnerNurtureText, getPartnerNurtureEmail, getPartnerLinkedIn } from '@/lib/messages';
 import { computeStatus, defaultTierForPartner } from '@/lib/cadence';
 
-const tierColors: Record<RelationshipTier, string> = {
-  A: 'bg-purple-200 text-[#5b21b6]',
-  B: 'bg-blue-100 text-blue-800',
-  C: 'bg-gray-100 text-gray-700',
+const tierPill: Record<RelationshipTier, string> = {
+  A: 'pill-purple',
+  B: 'pill-teal',
+  C: 'pill-amber',
 };
 
-const statusPill: Record<string, { label: string; color: string }> = {
-  overdue: { label: 'Overdue', color: 'bg-red-100 text-[#dc2626]' },
-  due_soon: { label: 'Due this week', color: 'bg-amber-100 text-amber-700' },
-  on_track: { label: 'On track', color: 'bg-green-100 text-[#059669]' },
+const statusPill: Record<string, { label: string; className: string }> = {
+  overdue: { label: 'Overdue', className: 'pill-red' },
+  due_soon: { label: 'Due soon', className: 'pill-amber' },
+  on_track: { label: 'On track', className: 'pill-accent' },
 };
 
 const partnerTypeLabels: Record<PartnerType, string> = {
@@ -30,15 +30,6 @@ const partnerTypeLabels: Record<PartnerType, string> = {
   networking: 'Networking',
   past_client: 'Past Client',
   other: 'Other',
-};
-
-const partnerTypeColors: Record<PartnerType, string> = {
-  attorney: 'bg-indigo-100 text-indigo-800',
-  accountant: 'bg-teal-100 text-teal-800',
-  property_manager: 'bg-amber-100 text-amber-800',
-  networking: 'bg-pink-100 text-pink-800',
-  past_client: 'bg-green-100 text-green-800',
-  other: 'bg-gray-100 text-gray-700',
 };
 
 function getInitials(firstName: string, lastName: string): string {
@@ -124,52 +115,48 @@ export default function ReferralPartners() {
   if (!mounted) return null;
 
   const sorted = [...partners].sort((a, b) => {
-    const statusOrder: Record<string, number> = { overdue: 0, due_soon: 1, on_track: 2 };
-    const sa = statusOrder[computeStatus(a.lastTouch, a.tier)];
-    const sb = statusOrder[computeStatus(b.lastTouch, b.tier)];
+    const order: Record<string, number> = { overdue: 0, due_soon: 1, on_track: 2 };
+    const sa = order[computeStatus(a.lastTouch, a.tier)];
+    const sb = order[computeStatus(b.lastTouch, b.tier)];
     if (sa !== sb) return sa - sb;
     const tierOrder = { A: 0, B: 1, C: 2 };
     return tierOrder[a.tier] - tierOrder[b.tier];
   });
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Referral Partners</h2>
-        <button
-          onClick={() => setShowAdd(!showAdd)}
-          className="px-3 py-1.5 text-xs font-medium bg-[#1a1a1a] text-white rounded-md hover:bg-[#333]"
-        >
+    <div className="space-y-4 fade-up">
+      <div className="flex items-baseline justify-between">
+        <div>
+          <h2 className="font-display text-xl font-bold">Referral Partners</h2>
+          <span className="label-mono">{sorted.length} total</span>
+        </div>
+        <button onClick={() => setShowAdd(!showAdd)} className={showAdd ? 'btn-ghost' : 'btn-primary'}>
           {showAdd ? 'Cancel' : '+ Add partner'}
         </button>
       </div>
 
       {showAdd && (
-        <div className="bg-white rounded-lg border border-[#e8e8e0] p-4 space-y-2">
-          <div className="grid grid-cols-2 gap-2">
+        <div className="card p-5 space-y-3 fade-up">
+          <div className="grid grid-cols-2 gap-3">
             <input
               placeholder="First name"
               value={newPartner.firstName}
               onChange={(e) => setNewPartner((p) => ({ ...p, firstName: e.target.value }))}
-              className="border border-[#e8e8e0] rounded-md px-2 py-1.5 text-sm"
             />
             <input
               placeholder="Last name"
               value={newPartner.lastName}
               onChange={(e) => setNewPartner((p) => ({ ...p, lastName: e.target.value }))}
-              className="border border-[#e8e8e0] rounded-md px-2 py-1.5 text-sm"
             />
           </div>
           <input
             placeholder="Company"
             value={newPartner.company}
             onChange={(e) => setNewPartner((p) => ({ ...p, company: e.target.value }))}
-            className="w-full border border-[#e8e8e0] rounded-md px-2 py-1.5 text-sm"
           />
           <select
             value={newPartner.partnerType}
             onChange={(e) => setNewPartner((p) => ({ ...p, partnerType: e.target.value as PartnerType }))}
-            className="w-full border border-[#e8e8e0] rounded-md px-2 py-1.5 text-sm"
           >
             {(Object.keys(partnerTypeLabels) as PartnerType[]).map((t) => (
               <option key={t} value={t}>
@@ -177,73 +164,66 @@ export default function ReferralPartners() {
               </option>
             ))}
           </select>
-          <button
-            onClick={addPartner}
-            className="px-3 py-1.5 text-xs font-medium bg-[#059669] text-white rounded-md hover:bg-[#047857]"
-          >
-            Add
+          <button onClick={addPartner} className="btn-primary">
+            Add partner
           </button>
         </div>
       )}
 
       {sorted.length === 0 && !showAdd && (
-        <div className="bg-white rounded-lg p-8 border border-[#e8e8e0] text-center text-gray-500">
-          No referral partners yet. Click &quot;Add partner&quot; to get started, or import a CSV with Focus_Type__c set to &quot;Referral Partner&quot;.
+        <div className="card p-8 text-center" style={{ color: 'var(--muted)' }}>
+          No referral partners yet. Add one or import a CSV with Focus_Type__c set to &quot;Referral Partner&quot;.
         </div>
       )}
 
       <div className="space-y-3">
-        {sorted.map((partner) => {
+        {sorted.map((partner, idx) => {
           const status = computeStatus(partner.lastTouch, partner.tier);
           const sp = statusPill[status];
           const isExpanded = expanded === partner.id;
+          const fadeClass = `fade-up-${Math.min(idx + 1, 5)}`;
           return (
-            <div key={partner.id} className="bg-white rounded-lg border border-[#e8e8e0]">
-              <button
-                onClick={() => setExpanded(isExpanded ? null : partner.id)}
-                className="w-full p-4 text-left"
-              >
+            <div key={partner.id} className={`card card-hover ${fadeClass}`}>
+              <button onClick={() => setExpanded(isExpanded ? null : partner.id)} className="w-full p-5 text-left">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0">
-                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-teal-600 text-white flex items-center justify-center text-sm font-bold">
+                    <div
+                      className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-sm font-display font-bold"
+                      style={{ background: 'var(--teal-bg)', color: 'var(--teal)' }}
+                    >
                       {getInitials(partner.firstName, partner.lastName)}
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold">
+                        <span className="font-display font-semibold text-base">
                           {partner.firstName} {partner.lastName}
                         </span>
-                        <span className="text-sm text-gray-500">{partner.company}</span>
+                        <span className="pill pill-muted">{partnerTypeLabels[partner.partnerType]}</span>
+                        <span className={`pill ${tierPill[partner.tier]}`}>Tier {partner.tier}</span>
                       </div>
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${partnerTypeColors[partner.partnerType]}`}>
-                          {partnerTypeLabels[partner.partnerType]}
-                        </span>
-                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${tierColors[partner.tier]}`}>
-                          Tier {partner.tier}
-                        </span>
-                        <span className="text-xs text-gray-500">{partner.referralCount} referrals</span>
-                      </div>
-                      <div className="flex gap-3 mt-1 text-xs text-gray-500 flex-wrap">
-                        <span>Last: {partner.lastTouch || 'Never'}</span>
-                        <span>Next due: {partner.nextDue || 'ASAP'}</span>
+                      <div className="flex gap-3 mt-1 flex-wrap">
+                        <span className="label-mono">{partner.company}</span>
+                        <span className="label-mono" style={{ color: 'var(--muted2)' }}>·</span>
+                        <span className="label-mono">{partner.referralCount} referrals</span>
+                        <span className="label-mono" style={{ color: 'var(--muted2)' }}>·</span>
+                        <span className="label-mono">Last {partner.lastTouch || 'never'}</span>
+                        <span className="label-mono" style={{ color: 'var(--muted2)' }}>·</span>
+                        <span className="label-mono">Due {partner.nextDue || 'ASAP'}</span>
                       </div>
                     </div>
                   </div>
-                  <span className={`flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${sp.color}`}>
-                    {sp.label}
-                  </span>
+                  <span className={`pill ${sp.className} flex-shrink-0`}>{sp.label}</span>
                 </div>
               </button>
 
               {isExpanded && (
-                <div className="px-4 pb-4 border-t border-[#e8e8e0] pt-3 space-y-3">
+                <div className="px-5 pb-5 border-t border-[var(--border)] pt-4 space-y-4">
                   <div>
-                    <p className="text-xs font-medium text-gray-500 mb-1">Type</p>
+                    <div className="label-mono mb-2">Type</div>
                     <select
                       value={partner.partnerType}
                       onChange={(e) => changeType(partner.id, e.target.value as PartnerType)}
-                      className="border border-[#e8e8e0] rounded-md px-2 py-1 text-xs"
+                      style={{ width: 'auto', minWidth: '200px' }}
                     >
                       {(Object.keys(partnerTypeLabels) as PartnerType[]).map((t) => (
                         <option key={t} value={t}>
@@ -253,17 +233,13 @@ export default function ReferralPartners() {
                     </select>
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-gray-500 mb-1">Tier</p>
+                    <div className="label-mono mb-2">Tier</div>
                     <div className="flex gap-2">
                       {(['A', 'B', 'C'] as RelationshipTier[]).map((t) => (
                         <button
                           key={t}
                           onClick={() => changeTier(partner.id, t)}
-                          className={`px-3 py-1 text-xs font-medium rounded-md ${
-                            partner.tier === t
-                              ? tierColors[t]
-                              : 'bg-white border border-[#e8e8e0] text-gray-600 hover:bg-gray-50'
-                          }`}
+                          className={partner.tier === t ? 'btn-primary' : 'btn-ghost'}
                         >
                           Tier {t}
                         </button>
@@ -271,37 +247,37 @@ export default function ReferralPartners() {
                     </div>
                   </div>
                   <div className="flex gap-2 flex-wrap">
-                    <button
-                      onClick={() => logTouch(partner.id)}
-                      className="px-3 py-1.5 text-xs font-medium bg-[#059669] text-white rounded-md hover:bg-[#047857]"
-                    >
+                    <button onClick={() => logTouch(partner.id)} className="btn-primary">
                       Log touch today
                     </button>
                     <button
                       onClick={() => copyText(getPartnerNurtureText(partner), `${partner.id}-text`)}
-                      className="px-3 py-1.5 text-xs font-medium bg-[#1a1a1a] text-white rounded-md hover:bg-[#333]"
+                      className="btn-secondary"
                     >
-                      {copied === `${partner.id}-text` ? 'Copied!' : 'Copy text'}
+                      {copied === `${partner.id}-text` ? 'Copied' : 'Copy text'}
                     </button>
                     <button
                       onClick={() => copyText(getPartnerNurtureEmail(partner), `${partner.id}-email`)}
-                      className="px-3 py-1.5 text-xs font-medium bg-[#5b21b6] text-white rounded-md hover:bg-[#4c1d95]"
+                      className="btn-secondary"
                     >
-                      {copied === `${partner.id}-email` ? 'Copied!' : 'Copy email'}
+                      {copied === `${partner.id}-email` ? 'Copied' : 'Copy email'}
                     </button>
                     <button
                       onClick={() => copyText(getPartnerLinkedIn(partner), `${partner.id}-li`)}
-                      className="px-3 py-1.5 text-xs font-medium bg-[#1e40af] text-white rounded-md hover:bg-[#1e3a8a]"
+                      className="btn-secondary"
                     >
-                      {copied === `${partner.id}-li` ? 'Copied!' : 'Copy LinkedIn'}
+                      {copied === `${partner.id}-li` ? 'Copied' : 'Copy LinkedIn'}
                     </button>
                   </div>
-                  <textarea
-                    placeholder="Add notes..."
-                    value={notes[partner.id] ?? partner.notes}
-                    onChange={(e) => handleNoteChange(partner.id, e.target.value)}
-                    className="w-full border border-[#e8e8e0] rounded-md p-2 text-sm resize-none h-20"
-                  />
+                  <div>
+                    <div className="label-mono mb-2">Notes</div>
+                    <textarea
+                      placeholder="Add notes..."
+                      value={notes[partner.id] ?? partner.notes}
+                      onChange={(e) => handleNoteChange(partner.id, e.target.value)}
+                      className="resize-none h-20"
+                    />
+                  </div>
                 </div>
               )}
             </div>

@@ -5,7 +5,7 @@ import { Sequence } from '@/types';
 
 const sequences: Sequence[] = [
   {
-    name: 'Broker Nurture (30-day rolling)',
+    name: 'Broker Nurture',
     totalDays: 30,
     steps: [
       { day: 1, channel: 'text', auto: false, message: 'Quick thank-you text referencing their last deal or intro. Keep it casual and short.' },
@@ -18,7 +18,7 @@ const sequences: Sequence[] = [
     ],
   },
   {
-    name: 'Referral Partner Nurture (45-day rolling)',
+    name: 'Referral Partner Nurture',
     totalDays: 45,
     steps: [
       { day: 1, channel: 'text', auto: false, message: 'Friendly hello text. Just checking in, no ask. Build relationship equity.' },
@@ -30,7 +30,7 @@ const sequences: Sequence[] = [
     ],
   },
   {
-    name: 'New Broker Cold Outreach (21-day)',
+    name: 'New Broker Cold Outreach',
     totalDays: 21,
     steps: [
       { day: 1, channel: 'linkedin', auto: false, message: 'Send LinkedIn connection request with a short custom note referencing their firm and market.' },
@@ -43,7 +43,7 @@ const sequences: Sequence[] = [
     ],
   },
   {
-    name: 'Hot Prospect — Broker Intel Lead (18-day)',
+    name: 'Hot Prospect — Broker Intel Lead',
     totalDays: 18,
     steps: [
       { day: 1, channel: 'call', auto: false, message: 'Call immediately after broker intro. Reference the broker by name and the specific opportunity.' },
@@ -58,11 +58,11 @@ const sequences: Sequence[] = [
   },
 ];
 
-const channelIcons: Record<string, { bg: string; label: string }> = {
-  call: { bg: 'bg-green-100 text-green-800', label: 'Call' },
-  text: { bg: 'bg-blue-100 text-blue-800', label: 'Text' },
-  email: { bg: 'bg-yellow-100 text-yellow-800', label: 'Email' },
-  linkedin: { bg: 'bg-indigo-100 text-indigo-800', label: 'LinkedIn' },
+const channelPill: Record<string, string> = {
+  call: 'pill-accent',
+  text: 'pill-blue',
+  email: 'pill-amber',
+  linkedin: 'pill-purple',
 };
 
 export default function SequencesTab() {
@@ -70,49 +70,59 @@ export default function SequencesTab() {
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 fade-up">
+      <div className="flex items-baseline justify-between">
+        <h2 className="font-display text-xl font-bold">Sequence Playbooks</h2>
+        <span className="label-mono">{sequences.length} sequences</span>
+      </div>
+
       {sequences.map((seq, sIdx) => (
-        <div key={sIdx} className="bg-white rounded-lg border border-[#e8e8e0]">
+        <div key={sIdx} className={`card card-hover fade-up-${Math.min(sIdx + 1, 5)}`}>
           <button
             onClick={() => setExpandedSeq(expandedSeq === sIdx ? -1 : sIdx)}
-            className="w-full p-4 text-left flex items-center justify-between"
+            className="w-full p-5 text-left flex items-center justify-between"
           >
             <div>
-              <h3 className="font-semibold">{seq.name}</h3>
-              <p className="text-sm text-gray-500">
-                {seq.steps.length} steps over {seq.totalDays} days
-              </p>
+              <h3 className="font-display font-semibold text-base">{seq.name}</h3>
+              <div className="flex gap-3 mt-1">
+                <span className="label-mono">{seq.steps.length} steps</span>
+                <span className="label-mono" style={{ color: 'var(--muted2)' }}>·</span>
+                <span className="label-mono">{seq.totalDays} days</span>
+              </div>
             </div>
           </button>
 
           {expandedSeq === sIdx && (
-            <div className="px-4 pb-4 border-t border-[#e8e8e0] pt-3">
+            <div className="px-5 pb-5 border-t border-[var(--border)] pt-4">
               <div className="relative">
-                <div className="absolute left-4 top-0 bottom-0 w-px bg-[#e8e8e0]" />
+                <div className="absolute left-3 top-0 bottom-0 w-px" style={{ background: 'var(--border)' }} />
                 <div className="space-y-3">
                   {seq.steps.map((step, stepIdx) => {
                     const stepKey = `${sIdx}-${stepIdx}`;
                     const isExpanded = expandedStep === stepKey;
-                    const ch = channelIcons[step.channel];
 
                     return (
-                      <div key={stepIdx} className="relative pl-10">
-                        <div className="absolute left-2.5 top-3 w-3 h-3 rounded-full bg-[#7c3aed] border-2 border-white" />
+                      <div key={stepIdx} className="relative pl-8">
+                        <div
+                          className="absolute left-1.5 top-3.5 w-3 h-3 rounded-full"
+                          style={{ background: 'var(--accent)', border: '2px solid var(--bg)' }}
+                        />
                         <button
                           onClick={() => setExpandedStep(isExpanded ? null : stepKey)}
-                          className="w-full text-left bg-gray-50 rounded-lg p-3 hover:bg-gray-100 transition-colors"
+                          className="w-full text-left rounded-lg p-3 transition-colors"
+                          style={{ background: 'var(--surface2)' }}
                         >
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-bold text-[#7c3aed]">Day {step.day}</span>
-                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${ch.bg}`}>
-                              {ch.label}
+                            <span className="label-mono font-bold" style={{ color: 'var(--accent)' }}>
+                              Day {step.day}
                             </span>
-                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-600">
-                              Manual
-                            </span>
+                            <span className={`pill ${channelPill[step.channel]}`}>{step.channel}</span>
+                            <span className="pill pill-muted">Manual</span>
                           </div>
                           {isExpanded && (
-                            <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">{step.message}</p>
+                            <p className="mt-2 text-sm whitespace-pre-wrap" style={{ color: 'var(--text)' }}>
+                              {step.message}
+                            </p>
                           )}
                         </button>
                       </div>

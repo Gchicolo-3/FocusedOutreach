@@ -19,18 +19,24 @@ export default function TabNav({
   onChange: (tab: TabId) => void;
 }) {
   return (
-    <nav className="flex border-b border-[#e8e8e0] bg-white overflow-x-auto">
+    <nav className="flex border-b border-[var(--border)] overflow-x-auto px-6" style={{ background: 'var(--bg)' }}>
       {tabs.map((tab) => (
         <button
           key={tab.id}
           onClick={() => onChange(tab.id)}
-          className={`px-5 py-3 text-sm font-medium whitespace-nowrap transition-colors ${
-            active === tab.id
-              ? 'border-b-2 border-[#1a1a1a] text-[#1a1a1a]'
-              : 'text-gray-500 hover:text-[#1a1a1a]'
-          }`}
+          className="px-4 py-3 text-sm whitespace-nowrap transition-colors relative"
+          style={{
+            color: active === tab.id ? 'var(--text)' : 'var(--muted)',
+            fontWeight: active === tab.id ? 600 : 400,
+          }}
         >
           {tab.label}
+          {active === tab.id && (
+            <span
+              className="absolute left-4 right-4 -bottom-px h-px"
+              style={{ background: 'var(--accent)' }}
+            />
+          )}
         </button>
       ))}
     </nav>

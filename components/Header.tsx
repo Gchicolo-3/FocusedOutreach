@@ -25,7 +25,7 @@ function LiveClock() {
     return () => clearInterval(interval);
   }, []);
   if (!time) return null;
-  return <span className="text-sm text-gray-500">{time}</span>;
+  return <span className="label-mono">{time}</span>;
 }
 
 export default function Header({ onImport, refreshKey }: { onImport: () => void; refreshKey: number }) {
@@ -47,34 +47,49 @@ export default function Header({ onImport, refreshKey }: { onImport: () => void;
     weekday: 'long',
     month: 'long',
     day: 'numeric',
-    year: 'numeric',
   });
 
   return (
-    <header className="bg-white border-b border-[#e8e8e0] px-4 py-3">
-      <div className="max-w-5xl mx-auto flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-lg font-bold text-[#1a1a1a]">
-            Focus Studio — Prospecting OS
-          </h1>
-          <div className="flex items-center gap-3 text-sm text-gray-500 flex-wrap">
-            <span>{today}</span>
-            <LiveClock />
-            {mounted && (
-              <span className="text-xs text-gray-400">
-                {stats.prospects} prospects · {stats.brokers} brokers · {stats.partners} partners
+    <header className="border-b border-[var(--border)] px-6 py-5" style={{ background: 'var(--bg)' }}>
+      <div className="max-w-6xl mx-auto">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="font-display text-2xl font-bold tracking-tight text-[var(--text)]">
+              Focus Studio
+            </h1>
+            <div className="flex items-center gap-4 mt-1 flex-wrap">
+              <span className="label-mono">Prospecting OS</span>
+              <span className="label-mono" style={{ color: 'var(--muted2)' }}>·</span>
+              <span className="label-mono">{today}</span>
+              <LiveClock />
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {mounted && lastImport && (
+              <span className="label-mono" style={{ color: 'var(--muted2)' }}>
+                Last import {new Date(lastImport).toLocaleDateString()}
               </span>
             )}
+            <CSVUploader onImport={onImport} />
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          {mounted && lastImport && (
-            <span className="text-xs text-gray-400">
-              Last import: {new Date(lastImport).toLocaleDateString()}
-            </span>
-          )}
-          <CSVUploader onImport={onImport} />
-        </div>
+
+        {mounted && (stats.prospects + stats.brokers + stats.partners > 0) && (
+          <div className="grid grid-cols-3 gap-3 mt-6 max-w-md">
+            <div className="stat-card">
+              <div className="stat-num">{stats.prospects}</div>
+              <div className="stat-label">Prospects</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-num">{stats.brokers}</div>
+              <div className="stat-label">Brokers</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-num">{stats.partners}</div>
+              <div className="stat-label">Partners</div>
+            </div>
+          </div>
+        )}
       </div>
     </header>
   );

@@ -19,14 +19,10 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col w-full">
+    <div className="min-h-screen">
       <Header onImport={handleImport} refreshKey={refreshKey} />
-
-      <div className="max-w-5xl mx-auto w-full">
-        <TabNav active={tab} onChange={setTab} />
-      </div>
-
-      <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-6">
+      <TabNav active={tab} onChange={setTab} />
+      <main className="max-w-6xl mx-auto px-6 py-8">
         {tab === 'do-this-now' && <DoThisNow key={refreshKey} />}
         {tab === 'broker-engine' && <BrokerEngine key={refreshKey} />}
         {tab === 'referral-partners' && <ReferralPartners key={refreshKey} />}

@@ -4,18 +4,11 @@ import { useState, useEffect } from 'react';
 import { ColdBroker } from '@/types';
 import { getColdBrokers, updateColdBroker, initDefaultColdBrokers } from '@/lib/storage';
 
-const firmColors: Record<string, string> = {
-  CBRE: 'bg-green-100 text-green-800',
-  'Cushman & Wakefield': 'bg-blue-100 text-blue-800',
-  JLL: 'bg-red-100 text-red-800',
-  Newmark: 'bg-purple-100 text-purple-800',
-};
-
-const statusLabels: Record<string, { label: string; color: string }> = {
-  new: { label: 'New', color: 'bg-blue-100 text-[#1e40af]' },
-  outreach_sent: { label: 'Outreach Sent', color: 'bg-amber-100 text-amber-700' },
-  connected: { label: 'Connected', color: 'bg-green-100 text-green-700' },
-  active_broker: { label: 'Active Broker', color: 'bg-purple-100 text-[#5b21b6]' },
+const statusPill: Record<string, { label: string; className: string }> = {
+  new: { label: 'New', className: 'pill-blue' },
+  outreach_sent: { label: 'Outreach Sent', className: 'pill-amber' },
+  connected: { label: 'Connected', className: 'pill-accent' },
+  active_broker: { label: 'Active Broker', className: 'pill-purple' },
 };
 
 function getInitials(name: string): string {
@@ -48,17 +41,18 @@ export default function NewContacts() {
   const filtered = filterFirm === 'all' ? contacts : contacts.filter((c) => c.firm === filterFirm);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 fade-up">
+      <div className="flex items-baseline justify-between">
+        <h2 className="font-display text-xl font-bold">New Contacts</h2>
+        <span className="label-mono">{filtered.length} contacts</span>
+      </div>
+
       <div className="flex gap-2 flex-wrap">
         {firms.map((f) => (
           <button
             key={f}
             onClick={() => setFilterFirm(f)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              filterFirm === f
-                ? 'bg-[#1a1a1a] text-white'
-                : 'bg-white text-gray-600 border border-[#e8e8e0] hover:bg-gray-50'
-            }`}
+            className={filterFirm === f ? 'btn-primary' : 'btn-ghost'}
           >
             {f === 'all' ? 'All Firms' : f}
           </button>
@@ -66,61 +60,57 @@ export default function NewContacts() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        {filtered.map((contact) => {
-          const firmColor = firmColors[contact.firm] || 'bg-gray-100 text-gray-700';
-          const st = statusLabels[contact.status];
+        {filtered.map((contact, idx) => {
+          const sp = statusPill[contact.status];
+          const fadeClass = `fade-up-${Math.min(idx + 1, 5)}`;
 
           return (
-            <div key={contact.id} className="bg-white rounded-lg border border-[#e8e8e0] p-4">
+            <div key={contact.id} className={`card card-hover p-5 ${fadeClass}`}>
               <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-[#5b21b6] text-white flex items-center justify-center text-sm font-bold">
+                <div
+                  className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-sm font-display font-bold"
+                  style={{ background: 'var(--purple-bg)', color: 'var(--purple)' }}
+                >
                   {getInitials(contact.name)}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold">{contact.name}</span>
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${firmColor}`}>
-                      {contact.firm}
-                    </span>
+                    <span className="font-display font-semibold">{contact.name}</span>
+                    <span className="pill pill-muted">{contact.firm}</span>
                   </div>
-                  <p className="text-sm text-gray-500">{contact.title}</p>
-                  <div className="mt-2 space-y-0.5 text-sm">
+                  <p className="label-mono mt-0.5">{contact.title}</p>
+                  <div className="mt-3 space-y-1 text-sm">
                     <p>
-                      <a href={`mailto:${contact.email}`} className="text-[#1e40af] hover:underline break-all">
+                      <a
+                        href={`mailto:${contact.email}`}
+                        className="hover:underline break-all"
+                        style={{ color: 'var(--accent)' }}
+                      >
                         {contact.email}
                       </a>
                     </p>
-                    {contact.phone && <p className="text-gray-600">{contact.phone}</p>}
-                    {contact.mobile && <p className="text-gray-600">M: {contact.mobile}</p>}
+                    {contact.phone && <p className="label-mono">{contact.phone}</p>}
+                    {contact.mobile && <p className="label-mono">M: {contact.mobile}</p>}
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#e8e8e0] gap-2 flex-wrap">
-                <span className={`px-2 py-0.5 rounded text-xs font-medium ${st.color}`}>{st.label}</span>
-                <div className="flex gap-1.5 flex-wrap">
+              <div className="flex items-center justify-between mt-4 pt-4 border-t border-[var(--border)] gap-2 flex-wrap">
+                <span className={`pill ${sp.className}`}>{sp.label}</span>
+                <div className="flex gap-2 flex-wrap">
                   {contact.status === 'new' && (
-                    <button
-                      onClick={() => changeStatus(contact.id, 'outreach_sent')}
-                      className="px-2.5 py-1 text-xs font-medium bg-[#1a1a1a] text-white rounded-md hover:bg-[#333]"
-                    >
-                      Mark outreach sent
+                    <button onClick={() => changeStatus(contact.id, 'outreach_sent')} className="btn-secondary">
+                      Outreach sent
                     </button>
                   )}
                   {contact.status === 'outreach_sent' && (
-                    <button
-                      onClick={() => changeStatus(contact.id, 'connected')}
-                      className="px-2.5 py-1 text-xs font-medium bg-[#059669] text-white rounded-md hover:bg-[#047857]"
-                    >
-                      Mark connected
+                    <button onClick={() => changeStatus(contact.id, 'connected')} className="btn-primary">
+                      Connected
                     </button>
                   )}
                   {contact.status !== 'active_broker' && (
-                    <button
-                      onClick={() => changeStatus(contact.id, 'active_broker')}
-                      className="px-2.5 py-1 text-xs font-medium bg-[#5b21b6] text-white rounded-md hover:bg-[#4c1d95]"
-                    >
-                      Move to Broker Engine
+                    <button onClick={() => changeStatus(contact.id, 'active_broker')} className="btn-primary">
+                      To Broker Engine
                     </button>
                   )}
                 </div>
