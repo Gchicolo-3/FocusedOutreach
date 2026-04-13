@@ -2,25 +2,16 @@
 
 import { useState, useEffect } from 'react';
 import { Partner, PartnerType, RelationshipTier } from '@/types';
-import {
-  getPartners,
-  setPartners,
-  updatePartner,
-  logPartnerTouch,
-} from '@/lib/storage';
+import { getPartners, setPartners, updatePartner, logPartnerTouch } from '@/lib/storage';
 import { getPartnerNurtureText, getPartnerNurtureEmail, getPartnerLinkedIn } from '@/lib/messages';
 import { computeStatus, defaultTierForPartner } from '@/lib/cadence';
+import { C, F, labelMono, btnPrimary, btnSecondary, btnGhost, pillStyle, inputBase } from '@/lib/design';
 
-const tierPill: Record<RelationshipTier, string> = {
-  A: 'pill-purple',
-  B: 'pill-teal',
-  C: 'pill-amber',
-};
-
-const statusPill: Record<string, { label: string; className: string }> = {
-  overdue: { label: 'Overdue', className: 'pill-red' },
-  due_soon: { label: 'Due soon', className: 'pill-amber' },
-  on_track: { label: 'On track', className: 'pill-accent' },
+const tierPill: Record<RelationshipTier, 'purple' | 'teal' | 'amber'> = { A: 'purple', B: 'teal', C: 'amber' };
+const statusPill: Record<string, { label: string; variant: 'red' | 'amber' | 'accent' }> = {
+  overdue: { label: 'Overdue', variant: 'red' },
+  due_soon: { label: 'Due soon', variant: 'amber' },
+  on_track: { label: 'On track', variant: 'accent' },
 };
 
 const partnerTypeLabels: Record<PartnerType, string> = {
@@ -45,7 +36,6 @@ export default function ReferralPartners() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const [mounted, setMounted] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [newPartner, setNewPartner] = useState({
     firstName: '',
@@ -55,7 +45,6 @@ export default function ReferralPartners() {
   });
 
   useEffect(() => {
-    setMounted(true);
     setPartnersState(getPartners());
   }, []);
 
@@ -112,8 +101,6 @@ export default function ReferralPartners() {
     setNewPartner({ firstName: '', lastName: '', company: '', partnerType: 'other' });
   }
 
-  if (!mounted) return null;
-
   const sorted = [...partners].sort((a, b) => {
     const order: Record<string, number> = { overdue: 0, due_soon: 1, on_track: 2 };
     const sa = order[computeStatus(a.lastTouch, a.tier)];
@@ -124,39 +111,43 @@ export default function ReferralPartners() {
   });
 
   return (
-    <div className="space-y-4 fade-up">
+    <div className="flex flex-col gap-4 fade-up">
       <div className="flex items-baseline justify-between">
         <div>
-          <h2 className="font-display text-xl font-bold">Referral Partners</h2>
-          <span className="label-mono">{sorted.length} total</span>
+          <h2 style={{ fontFamily: F.display, fontSize: 18, fontWeight: 700, color: C.text }}>Referral Partners</h2>
+          <span style={labelMono}>{sorted.length} total</span>
         </div>
-        <button onClick={() => setShowAdd(!showAdd)} className={showAdd ? 'btn-ghost' : 'btn-primary'}>
+        <button onClick={() => setShowAdd(!showAdd)} style={showAdd ? btnGhost : btnPrimary}>
           {showAdd ? 'Cancel' : '+ Add partner'}
         </button>
       </div>
 
       {showAdd && (
-        <div className="card p-5 space-y-3 fade-up">
-          <div className="grid grid-cols-2 gap-3">
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20 }}>
+          <div className="grid grid-cols-2 gap-3" style={{ marginBottom: 12 }}>
             <input
               placeholder="First name"
               value={newPartner.firstName}
               onChange={(e) => setNewPartner((p) => ({ ...p, firstName: e.target.value }))}
+              style={inputBase}
             />
             <input
               placeholder="Last name"
               value={newPartner.lastName}
               onChange={(e) => setNewPartner((p) => ({ ...p, lastName: e.target.value }))}
+              style={inputBase}
             />
           </div>
           <input
             placeholder="Company"
             value={newPartner.company}
             onChange={(e) => setNewPartner((p) => ({ ...p, company: e.target.value }))}
+            style={{ ...inputBase, marginBottom: 12 }}
           />
           <select
             value={newPartner.partnerType}
             onChange={(e) => setNewPartner((p) => ({ ...p, partnerType: e.target.value as PartnerType }))}
+            style={{ ...inputBase, marginBottom: 12 }}
           >
             {(Object.keys(partnerTypeLabels) as PartnerType[]).map((t) => (
               <option key={t} value={t}>
@@ -164,66 +155,94 @@ export default function ReferralPartners() {
               </option>
             ))}
           </select>
-          <button onClick={addPartner} className="btn-primary">
+          <button onClick={addPartner} style={btnPrimary}>
             Add partner
           </button>
         </div>
       )}
 
       {sorted.length === 0 && !showAdd && (
-        <div className="card p-8 text-center" style={{ color: 'var(--muted)' }}>
-          No referral partners yet. Add one or import a CSV with Focus_Type__c set to &quot;Referral Partner&quot;.
+        <div
+          style={{
+            background: C.surface,
+            border: `1px solid ${C.border}`,
+            borderRadius: 12,
+            padding: 32,
+            textAlign: 'center',
+            color: C.muted,
+          }}
+        >
+          No referral partners yet. Add one or import a CSV with Contact Type set to &quot;Referral Partner&quot;.
         </div>
       )}
 
-      <div className="space-y-3">
-        {sorted.map((partner, idx) => {
+      <div className="flex flex-col gap-3">
+        {sorted.map((partner) => {
           const status = computeStatus(partner.lastTouch, partner.tier);
           const sp = statusPill[status];
           const isExpanded = expanded === partner.id;
-          const fadeClass = `fade-up-${Math.min(idx + 1, 5)}`;
           return (
-            <div key={partner.id} className={`card card-hover ${fadeClass}`}>
-              <button onClick={() => setExpanded(isExpanded ? null : partner.id)} className="w-full p-5 text-left">
+            <div
+              key={partner.id}
+              style={{
+                background: C.surface,
+                border: `1px solid ${isExpanded ? C.border2 : C.border}`,
+                borderRadius: 12,
+              }}
+            >
+              <button
+                onClick={() => setExpanded(isExpanded ? null : partner.id)}
+                style={{ width: '100%', padding: 20, textAlign: 'left' }}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0">
                     <div
-                      className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-sm font-display font-bold"
-                      style={{ background: 'var(--teal-bg)', color: 'var(--teal)' }}
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: '50%',
+                        background: C.tealBg,
+                        color: C.teal,
+                        fontFamily: F.display,
+                        fontWeight: 700,
+                        fontSize: 13,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
                     >
                       {getInitials(partner.firstName, partner.lastName)}
                     </div>
-                    <div className="min-w-0">
+                    <div style={{ minWidth: 0 }}>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-display font-semibold text-base">
+                        <span style={{ fontFamily: F.display, fontWeight: 600, fontSize: 15, color: C.text }}>
                           {partner.firstName} {partner.lastName}
                         </span>
-                        <span className="pill pill-muted">{partnerTypeLabels[partner.partnerType]}</span>
-                        <span className={`pill ${tierPill[partner.tier]}`}>Tier {partner.tier}</span>
+                        <span style={pillStyle('muted')}>{partnerTypeLabels[partner.partnerType]}</span>
+                        <span style={pillStyle(tierPill[partner.tier])}>Tier {partner.tier}</span>
                       </div>
                       <div className="flex gap-3 mt-1 flex-wrap">
-                        <span className="label-mono">{partner.company}</span>
-                        <span className="label-mono" style={{ color: 'var(--muted2)' }}>·</span>
-                        <span className="label-mono">{partner.referralCount} referrals</span>
-                        <span className="label-mono" style={{ color: 'var(--muted2)' }}>·</span>
-                        <span className="label-mono">Last {partner.lastTouch || 'never'}</span>
-                        <span className="label-mono" style={{ color: 'var(--muted2)' }}>·</span>
-                        <span className="label-mono">Due {partner.nextDue || 'ASAP'}</span>
+                        <span style={labelMono}>{partner.company}</span>
+                        <span style={{ ...labelMono, color: C.muted2 }}>·</span>
+                        <span style={labelMono}>{partner.referralCount} referrals</span>
+                        <span style={{ ...labelMono, color: C.muted2 }}>·</span>
+                        <span style={labelMono}>Last {partner.lastTouch || 'never'}</span>
                       </div>
                     </div>
                   </div>
-                  <span className={`pill ${sp.className} flex-shrink-0`}>{sp.label}</span>
+                  <span style={{ ...pillStyle(sp.variant), flexShrink: 0 }}>{sp.label}</span>
                 </div>
               </button>
 
               {isExpanded && (
-                <div className="px-5 pb-5 border-t border-[var(--border)] pt-4 space-y-4">
-                  <div>
-                    <div className="label-mono mb-2">Type</div>
+                <div style={{ padding: '16px 20px 20px', borderTop: `1px solid ${C.border}` }}>
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ ...labelMono, marginBottom: 8 }}>Type</div>
                     <select
                       value={partner.partnerType}
                       onChange={(e) => changeType(partner.id, e.target.value as PartnerType)}
-                      style={{ width: 'auto', minWidth: '200px' }}
+                      style={{ ...inputBase, width: 'auto', minWidth: 200 }}
                     >
                       {(Object.keys(partnerTypeLabels) as PartnerType[]).map((t) => (
                         <option key={t} value={t}>
@@ -232,52 +251,41 @@ export default function ReferralPartners() {
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <div className="label-mono mb-2">Tier</div>
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ ...labelMono, marginBottom: 8 }}>Tier</div>
                     <div className="flex gap-2">
                       {(['A', 'B', 'C'] as RelationshipTier[]).map((t) => (
                         <button
                           key={t}
                           onClick={() => changeTier(partner.id, t)}
-                          className={partner.tier === t ? 'btn-primary' : 'btn-ghost'}
+                          style={partner.tier === t ? btnPrimary : btnGhost}
                         >
                           Tier {t}
                         </button>
                       ))}
                     </div>
                   </div>
-                  <div className="flex gap-2 flex-wrap">
-                    <button onClick={() => logTouch(partner.id)} className="btn-primary">
+                  <div className="flex gap-2 flex-wrap" style={{ marginBottom: 16 }}>
+                    <button onClick={() => logTouch(partner.id)} style={btnPrimary}>
                       Log touch today
                     </button>
-                    <button
-                      onClick={() => copyText(getPartnerNurtureText(partner), `${partner.id}-text`)}
-                      className="btn-secondary"
-                    >
+                    <button onClick={() => copyText(getPartnerNurtureText(partner), `${partner.id}-text`)} style={btnSecondary}>
                       {copied === `${partner.id}-text` ? 'Copied' : 'Copy text'}
                     </button>
-                    <button
-                      onClick={() => copyText(getPartnerNurtureEmail(partner), `${partner.id}-email`)}
-                      className="btn-secondary"
-                    >
+                    <button onClick={() => copyText(getPartnerNurtureEmail(partner), `${partner.id}-email`)} style={btnSecondary}>
                       {copied === `${partner.id}-email` ? 'Copied' : 'Copy email'}
                     </button>
-                    <button
-                      onClick={() => copyText(getPartnerLinkedIn(partner), `${partner.id}-li`)}
-                      className="btn-secondary"
-                    >
+                    <button onClick={() => copyText(getPartnerLinkedIn(partner), `${partner.id}-li`)} style={btnSecondary}>
                       {copied === `${partner.id}-li` ? 'Copied' : 'Copy LinkedIn'}
                     </button>
                   </div>
-                  <div>
-                    <div className="label-mono mb-2">Notes</div>
-                    <textarea
-                      placeholder="Add notes..."
-                      value={notes[partner.id] ?? partner.notes}
-                      onChange={(e) => handleNoteChange(partner.id, e.target.value)}
-                      className="resize-none h-20"
-                    />
-                  </div>
+                  <div style={{ ...labelMono, marginBottom: 8 }}>Notes</div>
+                  <textarea
+                    placeholder="Add notes..."
+                    value={notes[partner.id] ?? partner.notes}
+                    onChange={(e) => handleNoteChange(partner.id, e.target.value)}
+                    style={{ ...inputBase, height: 80, resize: 'none' }}
+                  />
                 </div>
               )}
             </div>

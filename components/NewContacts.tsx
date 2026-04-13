@@ -3,12 +3,13 @@
 import { useState, useEffect } from 'react';
 import { ColdBroker } from '@/types';
 import { getColdBrokers, updateColdBroker, initDefaultColdBrokers } from '@/lib/storage';
+import { C, F, labelMono, btnPrimary, btnSecondary, btnGhost, pillStyle } from '@/lib/design';
 
-const statusPill: Record<string, { label: string; className: string }> = {
-  new: { label: 'New', className: 'pill-blue' },
-  outreach_sent: { label: 'Outreach Sent', className: 'pill-amber' },
-  connected: { label: 'Connected', className: 'pill-accent' },
-  active_broker: { label: 'Active Broker', className: 'pill-purple' },
+const statusPill: Record<string, { label: string; variant: 'blue' | 'amber' | 'accent' | 'purple' }> = {
+  new: { label: 'New', variant: 'blue' },
+  outreach_sent: { label: 'Outreach Sent', variant: 'amber' },
+  connected: { label: 'Connected', variant: 'accent' },
+  active_broker: { label: 'Active Broker', variant: 'purple' },
 };
 
 function getInitials(name: string): string {
@@ -22,10 +23,8 @@ function getInitials(name: string): string {
 export default function NewContacts() {
   const [contacts, setContacts] = useState<ColdBroker[]>([]);
   const [filterFirm, setFilterFirm] = useState<string>('all');
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
     initDefaultColdBrokers();
     setContacts(getColdBrokers());
   }, []);
@@ -35,81 +34,94 @@ export default function NewContacts() {
     setContacts(getColdBrokers());
   }
 
-  if (!mounted) return null;
-
   const firms = ['all', ...Array.from(new Set(contacts.map((c) => c.firm)))];
   const filtered = filterFirm === 'all' ? contacts : contacts.filter((c) => c.firm === filterFirm);
 
   return (
-    <div className="space-y-4 fade-up">
+    <div className="flex flex-col gap-4 fade-up">
       <div className="flex items-baseline justify-between">
-        <h2 className="font-display text-xl font-bold">New Contacts</h2>
-        <span className="label-mono">{filtered.length} contacts</span>
+        <h2 style={{ fontFamily: F.display, fontSize: 18, fontWeight: 700, color: C.text }}>New Contacts</h2>
+        <span style={labelMono}>{filtered.length} contacts</span>
       </div>
 
       <div className="flex gap-2 flex-wrap">
         {firms.map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilterFirm(f)}
-            className={filterFirm === f ? 'btn-primary' : 'btn-ghost'}
-          >
+          <button key={f} onClick={() => setFilterFirm(f)} style={filterFirm === f ? btnPrimary : btnGhost}>
             {f === 'all' ? 'All Firms' : f}
           </button>
         ))}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        {filtered.map((contact, idx) => {
+      <div className="grid sm:grid-cols-2 gap-3">
+        {filtered.map((contact) => {
           const sp = statusPill[contact.status];
-          const fadeClass = `fade-up-${Math.min(idx + 1, 5)}`;
 
           return (
-            <div key={contact.id} className={`card card-hover p-5 ${fadeClass}`}>
+            <div
+              key={contact.id}
+              style={{
+                background: C.surface,
+                border: `1px solid ${C.border}`,
+                borderRadius: 12,
+                padding: 20,
+              }}
+            >
               <div className="flex items-start gap-3">
                 <div
-                  className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-sm font-display font-bold"
-                  style={{ background: 'var(--purple-bg)', color: 'var(--purple)' }}
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: '50%',
+                    background: C.purpleBg,
+                    color: C.purple,
+                    fontFamily: F.display,
+                    fontWeight: 700,
+                    fontSize: 13,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
                 >
                   {getInitials(contact.name)}
                 </div>
-                <div className="flex-1 min-w-0">
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-display font-semibold">{contact.name}</span>
-                    <span className="pill pill-muted">{contact.firm}</span>
+                    <span style={{ fontFamily: F.display, fontWeight: 600, fontSize: 15 }}>{contact.name}</span>
+                    <span style={pillStyle('muted')}>{contact.firm}</span>
                   </div>
-                  <p className="label-mono mt-0.5">{contact.title}</p>
-                  <div className="mt-3 space-y-1 text-sm">
-                    <p>
-                      <a
-                        href={`mailto:${contact.email}`}
-                        className="hover:underline break-all"
-                        style={{ color: 'var(--accent)' }}
-                      >
-                        {contact.email}
-                      </a>
-                    </p>
-                    {contact.phone && <p className="label-mono">{contact.phone}</p>}
-                    {contact.mobile && <p className="label-mono">M: {contact.mobile}</p>}
+                  <p style={{ ...labelMono, marginTop: 2 }}>{contact.title}</p>
+                  <div style={{ marginTop: 12 }}>
+                    <a
+                      href={`mailto:${contact.email}`}
+                      style={{ color: C.accent, fontSize: 13, wordBreak: 'break-all', textDecoration: 'none' }}
+                    >
+                      {contact.email}
+                    </a>
+                    {contact.phone && <div style={labelMono}>{contact.phone}</div>}
+                    {contact.mobile && <div style={labelMono}>M: {contact.mobile}</div>}
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between mt-4 pt-4 border-t border-[var(--border)] gap-2 flex-wrap">
-                <span className={`pill ${sp.className}`}>{sp.label}</span>
+              <div
+                style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${C.border}` }}
+                className="flex items-center justify-between gap-2 flex-wrap"
+              >
+                <span style={pillStyle(sp.variant)}>{sp.label}</span>
                 <div className="flex gap-2 flex-wrap">
                   {contact.status === 'new' && (
-                    <button onClick={() => changeStatus(contact.id, 'outreach_sent')} className="btn-secondary">
+                    <button onClick={() => changeStatus(contact.id, 'outreach_sent')} style={btnSecondary}>
                       Outreach sent
                     </button>
                   )}
                   {contact.status === 'outreach_sent' && (
-                    <button onClick={() => changeStatus(contact.id, 'connected')} className="btn-primary">
+                    <button onClick={() => changeStatus(contact.id, 'connected')} style={btnPrimary}>
                       Connected
                     </button>
                   )}
                   {contact.status !== 'active_broker' && (
-                    <button onClick={() => changeStatus(contact.id, 'active_broker')} className="btn-primary">
+                    <button onClick={() => changeStatus(contact.id, 'active_broker')} style={btnPrimary}>
                       To Broker Engine
                     </button>
                   )}

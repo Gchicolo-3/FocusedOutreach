@@ -9,6 +9,7 @@ import ReferralPartners from '@/components/ReferralPartners';
 import TextLauncher from '@/components/TextLauncher';
 import SequencesTab from '@/components/Sequences';
 import NewContacts from '@/components/NewContacts';
+import { C } from '@/lib/design';
 
 export default function Home() {
   const [tab, setTab] = useState<TabId>('do-this-now');
@@ -23,21 +24,13 @@ export default function Home() {
     setRefreshKey((k) => k + 1);
   }
 
-  // Prevent any server/client hydration mismatch in the tab-rendered subtree
-  // by only rendering the interactive app after mount.
-  if (!mounted) {
-    return (
-      <div className="min-h-screen">
-        <Header onImport={handleImport} refreshKey={refreshKey} />
-      </div>
-    );
-  }
+  if (!mounted) return null;
 
   return (
-    <div className="min-h-screen">
+    <div style={{ background: C.bg, color: C.text, minHeight: '100vh' }}>
       <Header onImport={handleImport} refreshKey={refreshKey} />
       <TabNav active={tab} onChange={setTab} />
-      <main className="max-w-6xl mx-auto px-6 py-8">
+      <main style={{ maxWidth: 900, margin: '0 auto', padding: '24px 20px 48px' }}>
         {tab === 'do-this-now' && <DoThisNow key={refreshKey} />}
         {tab === 'broker-engine' && <BrokerEngine key={refreshKey} />}
         {tab === 'referral-partners' && <ReferralPartners key={refreshKey} />}

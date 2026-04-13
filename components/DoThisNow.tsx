@@ -15,19 +15,20 @@ import {
   initDefaultColdBrokers,
 } from '@/lib/storage';
 import { selectDaily5 } from '@/lib/prioritize';
+import { C, F, labelMono, btnPrimary, btnSecondary, btnGhost, pillStyle } from '@/lib/design';
 
-const channelPill: Record<string, string> = {
-  call: 'pill-accent',
-  text: 'pill-blue',
-  email: 'pill-amber',
-  linkedin: 'pill-purple',
+const channelPill: Record<string, 'accent' | 'blue' | 'amber' | 'purple'> = {
+  call: 'accent',
+  text: 'blue',
+  email: 'amber',
+  linkedin: 'purple',
 };
 
-const sourcePill: Record<string, string> = {
-  broker: 'pill-purple',
-  partner: 'pill-teal',
-  prospect: 'pill-accent',
-  cold_broker: 'pill-blue',
+const sourcePill: Record<string, 'purple' | 'teal' | 'accent' | 'blue'> = {
+  broker: 'purple',
+  partner: 'teal',
+  prospect: 'accent',
+  cold_broker: 'blue',
 };
 
 const sourceDisplayLabel: Record<string, string> = {
@@ -51,26 +52,21 @@ export default function DoThisNow() {
   const [doneIds, setDoneIds] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
     initDefaultBrokers();
     initDefaultColdBrokers();
     loadTasks();
   }, []);
 
   function loadTasks() {
-    const prospects = getProspects();
-    const brokers = getBrokers();
-    const partners = getPartners();
-    const coldBrokers = getColdBrokers();
     const today = new Date().toISOString().split('T')[0];
     const done = getDone().filter((d) => d.date === today).map((d) => d.id);
     const snoozed = getSnoozed().filter((s) => s.until > today).map((s) => s.id);
-
     setDoneIds(new Set(done));
-    setTasks(selectDaily5(prospects, brokers, partners, coldBrokers, new Set(done), new Set(snoozed)));
+    setTasks(
+      selectDaily5(getProspects(), getBrokers(), getPartners(), getColdBrokers(), new Set(done), new Set(snoozed))
+    );
   }
 
   function handleDone(id: string) {
@@ -90,93 +86,159 @@ export default function DoThisNow() {
     setTimeout(() => setCopied(null), 2000);
   }
 
-  if (!mounted) return null;
-
   const doneCount = tasks.filter((t) => doneIds.has(t.id)).length;
 
   return (
-    <div className="space-y-4">
-      <div className="card p-5 fade-up">
-        <div className="flex justify-between items-baseline mb-3">
+    <div className="flex flex-col gap-4">
+      <div
+        style={{
+          background: C.surface,
+          border: `1px solid ${C.border}`,
+          borderRadius: 14,
+          padding: 20,
+        }}
+        className="fade-up"
+      >
+        <div className="flex items-baseline justify-between mb-3">
           <div>
-            <div className="label-mono">Today&apos;s Queue</div>
-            <div className="font-display text-2xl font-bold mt-1">
-              {doneCount}<span style={{ color: 'var(--muted)' }}> / {tasks.length}</span>
+            <div style={labelMono}>Today&apos;s Queue</div>
+            <div style={{ fontFamily: F.display, fontSize: 28, fontWeight: 800, marginTop: 4 }}>
+              {doneCount}
+              <span style={{ color: C.muted }}> / {tasks.length}</span>
             </div>
           </div>
-          <span className="label-mono">{motivational(doneCount, tasks.length)}</span>
+          <span style={labelMono}>{motivational(doneCount, tasks.length)}</span>
         </div>
-        <div className="w-full rounded-full h-1" style={{ background: 'var(--surface2)' }}>
+        <div style={{ background: C.surface2, height: 4, borderRadius: 999 }}>
           <div
-            className="h-1 rounded-full transition-all"
             style={{
+              background: C.accent,
+              height: 4,
+              borderRadius: 999,
               width: `${tasks.length ? (doneCount / tasks.length) * 100 : 0}%`,
-              background: 'var(--accent)',
+              transition: 'width 0.3s',
             }}
           />
         </div>
       </div>
 
       {tasks.length === 0 && (
-        <div className="card p-8 text-center fade-up-1" style={{ color: 'var(--muted)' }}>
-          No tasks yet. Import a CSV to get started.
+        <div
+          style={{
+            background: C.surface,
+            border: `1px solid ${C.border}`,
+            borderRadius: 14,
+            padding: 32,
+            textAlign: 'center',
+            color: C.muted,
+          }}
+          className="fade-up"
+        >
+          No tasks yet. Import contacts and activities to get started.
         </div>
       )}
 
       {tasks.map((task, idx) => {
         const isDone = doneIds.has(task.id);
         const isExpanded = expanded === task.id;
-        const fadeClass = `fade-up-${Math.min(idx + 1, 5)}`;
 
         return (
           <div
             key={task.id}
-            className={`card card-hover overflow-hidden transition-opacity ${fadeClass} ${isDone ? 'opacity-50' : ''}`}
+            style={{
+              background: C.surface,
+              border: `1px solid ${isExpanded ? C.border2 : C.border}`,
+              borderRadius: 14,
+              overflow: 'hidden',
+              opacity: isDone ? 0.5 : 1,
+              transition: 'border-color 0.15s, opacity 0.15s',
+            }}
+            className="fade-up"
           >
-            <button onClick={() => setExpanded(isExpanded ? null : task.id)} className="w-full p-5 text-left">
+            <button
+              onClick={() => setExpanded(isExpanded ? null : task.id)}
+              style={{ width: '100%', padding: 20, textAlign: 'left' }}
+            >
               <div className="flex items-start gap-4">
                 <div
-                  className="flex-shrink-0 font-display font-bold text-2xl leading-none pt-1"
-                  style={{ color: 'var(--accent)' }}
+                  style={{
+                    fontFamily: F.display,
+                    fontSize: 24,
+                    fontWeight: 800,
+                    color: C.accent,
+                    lineHeight: 1,
+                    paddingTop: 2,
+                    minWidth: 32,
+                  }}
                 >
                   {String(idx + 1).padStart(2, '0')}
                 </div>
-                <div className="flex-1 min-w-0">
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-display font-semibold text-base truncate">{task.name}</span>
-                    <span className="label-mono" style={{ color: 'var(--muted2)' }}>·</span>
-                    <span className="label-mono truncate">{task.company}</span>
+                    <span style={{ fontFamily: F.display, fontWeight: 600, fontSize: 16, color: C.text }}>
+                      {task.name}
+                    </span>
+                    <span style={{ ...labelMono, color: C.muted2 }}>·</span>
+                    <span style={labelMono}>{task.company}</span>
                   </div>
                   <div className="flex gap-1.5 mt-2 flex-wrap">
-                    <span className={`pill ${sourcePill[task.source]}`}>{sourceDisplayLabel[task.source]}</span>
-                    <span className={`pill ${channelPill[task.channel]}`}>{task.channel}</span>
-                    <span className="pill pill-muted">{task.label}</span>
-                    {isDone && <span className="pill pill-accent">Done</span>}
+                    <span style={pillStyle(sourcePill[task.source])}>{sourceDisplayLabel[task.source]}</span>
+                    <span style={pillStyle(channelPill[task.channel])}>{task.channel}</span>
+                    <span style={pillStyle('muted')}>{task.label}</span>
+                    {isDone && <span style={pillStyle('accent')}>Done</span>}
                   </div>
                 </div>
               </div>
             </button>
 
             {isExpanded && (
-              <div className="px-5 pb-5 border-t border-[var(--border)] pt-4 space-y-4">
+              <div style={{ padding: '0 20px 20px', borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
                 {task.context && (
-                  <div>
-                    <div className="label-mono mb-2">Context</div>
-                    <div className="intel-box">{task.context}</div>
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ ...labelMono, marginBottom: 8 }}>Context</div>
+                    <div
+                      style={{
+                        background: 'rgba(255,201,74,0.06)',
+                        borderLeft: `2px solid ${C.amber}`,
+                        borderRadius: '0 8px 8px 0',
+                        padding: '10px 14px',
+                        fontSize: 12,
+                        color: '#c8a84a',
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      {task.context}
+                    </div>
                   </div>
                 )}
-                <div>
-                  <div className="label-mono mb-2">Message</div>
-                  <div className="msg-bubble">{task.message}</div>
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ ...labelMono, marginBottom: 8 }}>Message</div>
+                  <div
+                    style={{
+                      background: C.surface2,
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 12,
+                      padding: 14,
+                      fontSize: 13,
+                      lineHeight: 1.7,
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    {task.message}
+                  </div>
                 </div>
                 <div className="flex gap-2 flex-wrap">
-                  <button onClick={() => copyMessage(task.message, task.id)} className="btn-primary">
+                  <button onClick={() => copyMessage(task.message, task.id)} style={btnPrimary}>
                     {copied === task.id ? 'Copied' : 'Copy message'}
                   </button>
-                  <button onClick={() => handleDone(task.id)} disabled={isDone} className="btn-secondary">
+                  <button
+                    onClick={() => handleDone(task.id)}
+                    disabled={isDone}
+                    style={{ ...btnSecondary, opacity: isDone ? 0.4 : 1 }}
+                  >
                     Mark done
                   </button>
-                  <button onClick={() => handleSnooze(task.id)} className="btn-ghost">
+                  <button onClick={() => handleSnooze(task.id)} style={btnGhost}>
                     Snooze 2 days
                   </button>
                 </div>

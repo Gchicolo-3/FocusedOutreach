@@ -14,17 +14,18 @@ import {
 } from '@/lib/storage';
 import { getBrokerNurtureText, getBrokerNurtureEmail, getBrokerLinkedIn } from '@/lib/messages';
 import { computeStatus } from '@/lib/cadence';
+import { C, F, labelMono, btnPrimary, btnSecondary, btnGhost, pillStyle, inputBase } from '@/lib/design';
 
-const tierPill: Record<RelationshipTier, string> = {
-  A: 'pill-purple',
-  B: 'pill-teal',
-  C: 'pill-amber',
+const tierPill: Record<RelationshipTier, 'purple' | 'teal' | 'amber'> = {
+  A: 'purple',
+  B: 'teal',
+  C: 'amber',
 };
 
-const statusPill: Record<string, { label: string; className: string }> = {
-  overdue: { label: 'Overdue', className: 'pill-red' },
-  due_soon: { label: 'Due soon', className: 'pill-amber' },
-  on_track: { label: 'On track', className: 'pill-accent' },
+const statusPill: Record<string, { label: string; variant: 'red' | 'amber' | 'accent' }> = {
+  overdue: { label: 'Overdue', variant: 'red' },
+  due_soon: { label: 'Due soon', variant: 'amber' },
+  on_track: { label: 'On track', variant: 'accent' },
 };
 
 function getInitials(firstName: string, lastName: string): string {
@@ -37,10 +38,8 @@ export default function BrokerEngine() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
     initDefaultBrokers();
     initDefaultColdBrokers();
     refresh();
@@ -102,8 +101,6 @@ export default function BrokerEngine() {
     refresh();
   }
 
-  if (!mounted) return null;
-
   const sortedBrokers = [...brokers].sort((a, b) => {
     const order: Record<string, number> = { overdue: 0, due_soon: 1, on_track: 2 };
     const sa = order[computeStatus(a.lastTouch, a.tier)];
@@ -113,104 +110,113 @@ export default function BrokerEngine() {
     return tierOrder[a.tier] - tierOrder[b.tier];
   });
 
+  const sectionHeader = (title: string, count: string) => (
+    <div className="flex items-baseline justify-between mb-4">
+      <h2 style={{ fontFamily: F.display, fontSize: 18, fontWeight: 700, color: C.text }}>{title}</h2>
+      <span style={labelMono}>{count}</span>
+    </div>
+  );
+
   return (
-    <div className="space-y-8">
-      <section className="fade-up">
-        <div className="flex items-baseline justify-between mb-4">
-          <h2 className="font-display text-xl font-bold">Active Brokers</h2>
-          <span className="label-mono">{sortedBrokers.length} total</span>
-        </div>
-        <div className="space-y-3">
-          {sortedBrokers.map((broker, idx) => {
+    <div className="flex flex-col gap-8 fade-up">
+      <section>
+        {sectionHeader('Active Brokers', `${sortedBrokers.length} total`)}
+        <div className="flex flex-col gap-3">
+          {sortedBrokers.map((broker) => {
             const status = computeStatus(broker.lastTouch, broker.tier);
             const sp = statusPill[status];
             const isExpanded = expanded === broker.id;
-            const fadeClass = `fade-up-${Math.min(idx + 1, 5)}`;
             return (
-              <div key={broker.id} className={`card card-hover ${fadeClass}`}>
-                <button onClick={() => setExpanded(isExpanded ? null : broker.id)} className="w-full p-5 text-left">
+              <div
+                key={broker.id}
+                style={{
+                  background: C.surface,
+                  border: `1px solid ${isExpanded ? C.border2 : C.border}`,
+                  borderRadius: 12,
+                  transition: 'border-color 0.15s',
+                }}
+              >
+                <button
+                  onClick={() => setExpanded(isExpanded ? null : broker.id)}
+                  style={{ width: '100%', padding: 20, textAlign: 'left' }}
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3 min-w-0">
                       <div
-                        className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-sm font-display font-bold"
-                        style={{ background: 'var(--purple-bg)', color: 'var(--purple)' }}
+                        style={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: '50%',
+                          background: C.purpleBg,
+                          color: C.purple,
+                          fontFamily: F.display,
+                          fontWeight: 700,
+                          fontSize: 13,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
                       >
                         {getInitials(broker.firstName, broker.lastName)}
                       </div>
-                      <div className="min-w-0">
+                      <div style={{ minWidth: 0 }}>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-display font-semibold text-base">
+                          <span style={{ fontFamily: F.display, fontWeight: 600, fontSize: 15, color: C.text }}>
                             {broker.firstName} {broker.lastName}
                           </span>
-                          <span className={`pill ${tierPill[broker.tier]}`}>Tier {broker.tier}</span>
+                          <span style={pillStyle(tierPill[broker.tier])}>Tier {broker.tier}</span>
                         </div>
                         <div className="flex items-center gap-3 mt-1 flex-wrap">
-                          <span className="label-mono">{broker.firm}</span>
-                          <span className="label-mono" style={{ color: 'var(--muted2)' }}>·</span>
-                          <span className="label-mono">{broker.dealCount} deals</span>
-                          <span className="label-mono" style={{ color: 'var(--muted2)' }}>·</span>
-                          <span className="label-mono">
-                            Last {broker.lastTouch || 'never'}
-                          </span>
-                          <span className="label-mono" style={{ color: 'var(--muted2)' }}>·</span>
-                          <span className="label-mono">
-                            Due {broker.nextDue || 'ASAP'}
-                          </span>
+                          <span style={labelMono}>{broker.firm}</span>
+                          <span style={{ ...labelMono, color: C.muted2 }}>·</span>
+                          <span style={labelMono}>{broker.dealCount} deals</span>
+                          <span style={{ ...labelMono, color: C.muted2 }}>·</span>
+                          <span style={labelMono}>Last {broker.lastTouch || 'never'}</span>
                         </div>
                       </div>
                     </div>
-                    <span className={`pill ${sp.className} flex-shrink-0`}>{sp.label}</span>
+                    <span style={{ ...pillStyle(sp.variant), flexShrink: 0 }}>{sp.label}</span>
                   </div>
                 </button>
 
                 {isExpanded && (
-                  <div className="px-5 pb-5 border-t border-[var(--border)] pt-4 space-y-4">
-                    <div>
-                      <div className="label-mono mb-2">Tier</div>
+                  <div style={{ padding: '16px 20px 20px', borderTop: `1px solid ${C.border}` }}>
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ ...labelMono, marginBottom: 8 }}>Tier</div>
                       <div className="flex gap-2">
                         {(['A', 'B', 'C'] as RelationshipTier[]).map((t) => (
                           <button
                             key={t}
                             onClick={() => changeTier(broker.id, t)}
-                            className={broker.tier === t ? 'btn-primary' : 'btn-ghost'}
+                            style={broker.tier === t ? btnPrimary : btnGhost}
                           >
                             Tier {t}
                           </button>
                         ))}
                       </div>
                     </div>
-                    <div className="flex gap-2 flex-wrap">
-                      <button onClick={() => logTouch(broker.id)} className="btn-primary">
+                    <div className="flex gap-2 flex-wrap" style={{ marginBottom: 16 }}>
+                      <button onClick={() => logTouch(broker.id)} style={btnPrimary}>
                         Log touch today
                       </button>
-                      <button
-                        onClick={() => copyText(getBrokerNurtureText(broker), `${broker.id}-text`)}
-                        className="btn-secondary"
-                      >
+                      <button onClick={() => copyText(getBrokerNurtureText(broker), `${broker.id}-text`)} style={btnSecondary}>
                         {copied === `${broker.id}-text` ? 'Copied' : 'Copy text'}
                       </button>
-                      <button
-                        onClick={() => copyText(getBrokerNurtureEmail(broker), `${broker.id}-email`)}
-                        className="btn-secondary"
-                      >
+                      <button onClick={() => copyText(getBrokerNurtureEmail(broker), `${broker.id}-email`)} style={btnSecondary}>
                         {copied === `${broker.id}-email` ? 'Copied' : 'Copy email'}
                       </button>
-                      <button
-                        onClick={() => copyText(getBrokerLinkedIn(broker), `${broker.id}-li`)}
-                        className="btn-secondary"
-                      >
+                      <button onClick={() => copyText(getBrokerLinkedIn(broker), `${broker.id}-li`)} style={btnSecondary}>
                         {copied === `${broker.id}-li` ? 'Copied' : 'Copy LinkedIn'}
                       </button>
                     </div>
-                    <div>
-                      <div className="label-mono mb-2">Notes</div>
-                      <textarea
-                        placeholder="Add notes..."
-                        value={notes[broker.id] ?? broker.notes}
-                        onChange={(e) => handleNoteChange(broker.id, e.target.value)}
-                        className="resize-none h-20"
-                      />
-                    </div>
+                    <div style={{ ...labelMono, marginBottom: 8 }}>Notes</div>
+                    <textarea
+                      placeholder="Add notes..."
+                      value={notes[broker.id] ?? broker.notes}
+                      onChange={(e) => handleNoteChange(broker.id, e.target.value)}
+                      style={{ ...inputBase, height: 80, resize: 'none' }}
+                    />
                   </div>
                 )}
               </div>
@@ -221,51 +227,52 @@ export default function BrokerEngine() {
 
       {coldBrokers.length > 0 && (
         <section>
-          <div className="flex items-baseline justify-between mb-4">
-            <h2 className="font-display text-xl font-bold">Cold Broker Queue</h2>
-            <span className="label-mono">
-              {coldBrokers.filter((c) => c.status !== 'active_broker').length} pending
-            </span>
-          </div>
-          <div className="space-y-3">
+          {sectionHeader('Cold Broker Queue', `${coldBrokers.filter((c) => c.status !== 'active_broker').length} pending`)}
+          <div className="flex flex-col gap-3">
             {coldBrokers
               .filter((cb) => cb.status !== 'active_broker')
-              .map((cb) => (
-                <div key={cb.id} className="card card-hover p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-display font-semibold">{cb.name}</span>
-                        <span className="label-mono">{cb.title}</span>
+              .map((cb) => {
+                const st =
+                  cb.status === 'outreach_sent'
+                    ? { label: 'Outreach Sent', variant: 'amber' as const }
+                    : cb.status === 'connected'
+                      ? { label: 'Connected', variant: 'accent' as const }
+                      : { label: 'New', variant: 'blue' as const };
+                return (
+                  <div
+                    key={cb.id}
+                    style={{
+                      background: C.surface,
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 12,
+                      padding: 20,
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div style={{ minWidth: 0 }}>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span style={{ fontFamily: F.display, fontWeight: 600, fontSize: 15 }}>{cb.name}</span>
+                          <span style={labelMono}>{cb.title}</span>
+                        </div>
+                        <div className="flex gap-3 mt-1 flex-wrap">
+                          <span style={labelMono}>{cb.firm}</span>
+                          {cb.email && <span style={labelMono}>{cb.email}</span>}
+                          {cb.phone && <span style={labelMono}>{cb.phone}</span>}
+                        </div>
                       </div>
-                      <div className="flex gap-3 mt-1 flex-wrap">
-                        <span className="label-mono">{cb.firm}</span>
-                        {cb.email && <span className="label-mono">{cb.email}</span>}
-                        {cb.phone && <span className="label-mono">{cb.phone}</span>}
-                      </div>
+                      <span style={{ ...pillStyle(st.variant), flexShrink: 0 }}>{st.label}</span>
                     </div>
-                    <span
-                      className={`pill flex-shrink-0 ${
-                        cb.status === 'outreach_sent'
-                          ? 'pill-amber'
-                          : cb.status === 'connected'
-                            ? 'pill-accent'
-                            : 'pill-blue'
-                      }`}
-                    >
-                      {cb.status === 'outreach_sent' ? 'Outreach Sent' : cb.status === 'connected' ? 'Connected' : 'New'}
-                    </span>
+                    <div className="flex gap-2 flex-wrap" style={{ marginTop: 16 }}>
+                      <button onClick={() => addToActive(cb)} style={btnPrimary}>
+                        Move to active
+                      </button>
+                      <button onClick={() => markOutreachSent(cb.id)} style={btnSecondary}>
+                        Mark outreach sent
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex gap-2 mt-4 flex-wrap">
-                    <button onClick={() => addToActive(cb)} className="btn-primary">
-                      Move to active
-                    </button>
-                    <button onClick={() => markOutreachSent(cb.id)} className="btn-secondary">
-                      Mark outreach sent
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
           </div>
         </section>
       )}

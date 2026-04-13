@@ -1,5 +1,7 @@
 'use client';
 
+import { C, F } from '@/lib/design';
+
 const tabs = [
   { id: 'do-this-now', label: 'Do This Now' },
   { id: 'broker-engine', label: 'Broker Engine' },
@@ -19,26 +21,45 @@ export default function TabNav({
   onChange: (tab: TabId) => void;
 }) {
   return (
-    <nav className="flex border-b border-[var(--border)] overflow-x-auto px-6" style={{ background: 'var(--bg)' }}>
-      {tabs.map((tab) => (
-        <button
-          key={tab.id}
-          onClick={() => onChange(tab.id)}
-          className="px-4 py-3 text-sm whitespace-nowrap transition-colors relative"
-          style={{
-            color: active === tab.id ? 'var(--text)' : 'var(--muted)',
-            fontWeight: active === tab.id ? 600 : 400,
-          }}
-        >
-          {tab.label}
-          {active === tab.id && (
-            <span
-              className="absolute left-4 right-4 -bottom-px h-px"
-              style={{ background: 'var(--accent)' }}
-            />
-          )}
-        </button>
-      ))}
+    <nav
+      style={{
+        background: C.bg,
+        borderBottom: `1px solid ${C.border}`,
+        overflowX: 'auto',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 900,
+          margin: '0 auto',
+          padding: '0 20px',
+          display: 'flex',
+        }}
+      >
+        {tabs.map((tab) => {
+          const isActive = active === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => onChange(tab.id)}
+              style={{
+                padding: '14px 16px',
+                fontSize: 13,
+                fontFamily: F.body,
+                fontWeight: isActive ? 600 : 400,
+                color: isActive ? C.text : C.muted,
+                borderBottom: `2px solid ${isActive ? C.accent : 'transparent'}`,
+                whiteSpace: 'nowrap',
+                transition: 'color 0.15s, border-color 0.15s',
+                marginBottom: -1,
+              }}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
     </nav>
   );
 }
