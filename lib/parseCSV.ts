@@ -9,6 +9,22 @@ export type ParsedImport = {
   uncategorized: UncategorizedContact[];
 };
 
+export type ActivityRecord = {
+  contactKey: string;
+  fullName: string;
+  company: string;
+  subject: string;
+  activityType: string;
+  date: string;
+  status: string;
+  priority: string;
+  comments: string;
+};
+
+export function normalizeContactKey(name: string): string {
+  return (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 function parseCSVLine(line: string): string[] {
   const fields: string[] = [];
   let current = '';
@@ -317,4 +333,157 @@ export function parseCSV(csvText: string, existingTags: Map<string, ContactType>
   }
 
   return result;
+}
+
+// ============ ACTIVITY CSV (legacy SF activity export) ============
+
+export function parseActivityCSV(csvText: string): Record<string, ActivityRecord> {
+  const result: Record<string, ActivityRecord> = {};
+  if (!csvText) return result;
+
+  const lines = csvText.split(/\r?\n/).filter((l) => l.trim());
+  if (lines.length < 2) {
+    console.warn('[parseActivityCSV] not enough lines:', lines.length);
+    return result;
+  }
+
+  const headers = parseCSVLine(lines[0]).map((h) => h.toLowerCase().trim());
+  const columnIndices: Partial<Record<ColumnKey, number>> = {};
+  headers.forEach((header, idx) => {
+    const mapped = COLUMN_MAP[header];
+    if (mapped) columnIndices[mapped] = idx;
+  });
+
+  console.log('[parseActivityCSV] headers:', headers);
+  console.log('[parseActivityCSV] mapped columns:', columnIndices);
+
+  for (let i = 1; i < lines.length; i++) {
+    const fields = parseCSVLine(lines[i]);
+    if (fields.length < 1) continue;
+
+    const getValue = (key: ColumnKey): string => {
+      const idx = columnIndices[key];
+      return idx !== undefined && idx < fields.length ? cleanValue(fields[idx]) : '';
+    };
+
+    const contactField = getValue('contact');
+    const firstName = getValue('firstName');
+    const lastName = getValue('lastName');
+    const fullName = contactField || `${firstName} ${lastName}`.trim();
+
+    if (!fullName) continue;
+
+    const key = normalizeContactKey(fullName);
+    if (!key) continue;
+
+    const record: ActivityRecord = {
+      contactKey: key,
+      fullName,
+      company: getValue('company'),
+      subject: getValue('subject'),
+      activityType: getValue('activityType'),
+      date: getValue('date'),
+      status: getValue('status'),
+      priority: getValue('priority'),
+      comments: getValue('comments'),
+    };
+
+    const existing = result[key];
+    if (!existing) {
+      result[key] = record;
+    } else {
+      // Concatenate comments so intel keywords from any activity are captured
+      const mergedComments = [existing.comments, record.comments]
+        .filter(Boolean)
+        .join(' | ');
+      // Keep most recent date/subject/activityType
+      const newer = record.date && (!existing.date || record.date > existing.date);
+      result[key] = {
+        ...existing,
+        comments: mergedComments,
+        subject: newer ? record.subject || existing.subject : existing.subject,
+        activityType: newer ? record.activityType || existing.activityType : existing.activityType,
+        date: newer ? record.date : existing.date,
+        status: newer ? record.status || existing.status : existing.status,
+        priority: newer ? record.priority || existing.priority : existing.priority,
+        company: existing.company || record.company,
+      };
+    }
+  }
+
+  return result;
+}
+
+// ============ ENRICHMENT ============
+
+function enrichBrokerName(firstName: string, lastName: string): string {
+  return `${firstName} ${lastName}`.trim();
+}
+
+export function enrichLeadsWithActivities(
+  prospects: Lead[],
+  activities: Record<string, ActivityRecord>
+): Lead[] {
+  return prospects.map((lead) => {
+    const key = normalizeContactKey(lead.contact);
+    const act = activities[key];
+    if (!act) return lead;
+
+    const comments = act.comments || lead.comments;
+    const broker = extractBroker(comments) || lead.broker;
+    const updated: Lead = {
+      ...lead,
+      company: lead.company && lead.company !== 'Unknown' ? lead.company : act.company || lead.company,
+      subject: act.subject || lead.subject,
+      activityType: act.activityType || lead.activityType,
+      date: act.date || lead.date,
+      status: act.status || lead.status,
+      priority: act.priority || lead.priority,
+      comments,
+      broker,
+      lastTouch: act.date || lead.lastTouch,
+    };
+    updated.tier = prioritizeLead(updated);
+    updated.channel = assignChannel(updated);
+    return updated;
+  });
+}
+
+export function enrichBrokersWithActivities(
+  brokers: Broker[],
+  activities: Record<string, ActivityRecord>
+): Broker[] {
+  return brokers.map((b) => {
+    const key = normalizeContactKey(enrichBrokerName(b.firstName, b.lastName));
+    const act = activities[key];
+    if (!act) return b;
+    const lastTouch = act.date || b.lastTouch;
+    const notes = [b.notes, act.comments].filter(Boolean).join(' | ') || b.notes;
+    return {
+      ...b,
+      lastTouch,
+      notes,
+      nextDue: computeNextDue(lastTouch, b.tier),
+      status: computeStatus(lastTouch, b.tier),
+    };
+  });
+}
+
+export function enrichPartnersWithActivities(
+  partners: Partner[],
+  activities: Record<string, ActivityRecord>
+): Partner[] {
+  return partners.map((p) => {
+    const key = normalizeContactKey(enrichBrokerName(p.firstName, p.lastName));
+    const act = activities[key];
+    if (!act) return p;
+    const lastTouch = act.date || p.lastTouch;
+    const notes = [p.notes, act.comments].filter(Boolean).join(' | ') || p.notes;
+    return {
+      ...p,
+      lastTouch,
+      notes,
+      nextDue: computeNextDue(lastTouch, p.tier),
+    };
+  });
 }

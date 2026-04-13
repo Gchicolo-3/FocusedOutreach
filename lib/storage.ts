@@ -27,7 +27,9 @@ const KEYS = {
   coldBrokers: 'fs_cold_brokers',
   userTags: 'fs_user_tags',
   lastImport: 'fs_last_import',
+  lastActivityImport: 'fs_last_activity_import',
   textSent: 'fs_text_sent',
+  activities: 'fs_activities',
 } as const;
 
 function get<T>(key: string, fallback: T): T {
@@ -193,6 +195,46 @@ export function getLastImport(): string | null {
 }
 export function setLastImport(date: string): void {
   set(KEYS.lastImport, date);
+}
+export function getLastActivityImport(): string | null {
+  return get<string | null>(KEYS.lastActivityImport, null);
+}
+export function setLastActivityImport(date: string): void {
+  set(KEYS.lastActivityImport, date);
+}
+
+// Activities (from activity report CSV, keyed by normalized contact name)
+import type { ActivityRecord } from './parseCSV';
+export function getActivities(): Record<string, ActivityRecord> {
+  return get<Record<string, ActivityRecord>>(KEYS.activities, {});
+}
+export function setActivities(activities: Record<string, ActivityRecord>): void {
+  set(KEYS.activities, activities);
+}
+export function mergeActivities(incoming: Record<string, ActivityRecord>): Record<string, ActivityRecord> {
+  const existing = getActivities();
+  const merged = { ...existing };
+  for (const key of Object.keys(incoming)) {
+    const prev = merged[key];
+    const next = incoming[key];
+    if (!prev) {
+      merged[key] = next;
+    } else {
+      const mergedComments = [prev.comments, next.comments].filter(Boolean).join(' | ');
+      const newer = next.date && (!prev.date || next.date > prev.date);
+      merged[key] = {
+        ...prev,
+        comments: mergedComments,
+        subject: newer ? next.subject || prev.subject : prev.subject,
+        activityType: newer ? next.activityType || prev.activityType : prev.activityType,
+        date: newer ? next.date : prev.date,
+        status: newer ? next.status || prev.status : prev.status,
+        priority: newer ? next.priority || prev.priority : prev.priority,
+      };
+    }
+  }
+  setActivities(merged);
+  return merged;
 }
 
 // Text sent tracking

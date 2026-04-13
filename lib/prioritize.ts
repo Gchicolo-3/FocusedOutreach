@@ -8,6 +8,9 @@ export function prioritizeLead(lead: Lead): 1 | 2 | 3 {
     comments.includes('intro') ||
     comments.includes('mentioned') ||
     comments.includes('intel from') ||
+    comments.includes('gave me') ||
+    comments.includes('referred') ||
+    comments.includes('connected me') ||
     !!lead.broker;
 
   if (hasBrokerIntel) return 1;
@@ -98,9 +101,10 @@ export function selectDaily5(
     let score = 0;
     let label = '';
 
-    if (p.tier === 1 && p.broker) {
-      score = 85;
-      label = 'Broker Intel';
+    if (p.tier === 1) {
+      // Broker-intel lead or other hot-intel keyword. Always 85+.
+      score = p.broker ? 92 : 85;
+      label = p.broker ? 'Broker Intel' : 'Hot Intel';
     } else if (p.tier === 2) {
       score = 60;
       label = 'Warm Prospect';

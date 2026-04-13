@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import CSVUploader from './CSVUploader';
 import {
   getLastImport,
+  getLastActivityImport,
   getProspects,
   getBrokers,
   getPartners,
@@ -31,11 +32,13 @@ function LiveClock() {
 export default function Header({ onImport, refreshKey }: { onImport: () => void; refreshKey: number }) {
   const [mounted, setMounted] = useState(false);
   const [lastImport, setLastImportState] = useState<string | null>(null);
+  const [lastActivity, setLastActivityState] = useState<string | null>(null);
   const [stats, setStats] = useState({ prospects: 0, brokers: 0, partners: 0 });
 
   useEffect(() => {
     setMounted(true);
     setLastImportState(getLastImport());
+    setLastActivityState(getLastActivityImport());
     setStats({
       prospects: getProspects().length,
       brokers: getBrokers().length,
@@ -64,11 +67,20 @@ export default function Header({ onImport, refreshKey }: { onImport: () => void;
               <LiveClock />
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            {mounted && lastImport && (
-              <span className="label-mono" style={{ color: 'var(--muted2)' }}>
-                Last import {new Date(lastImport).toLocaleDateString()}
-              </span>
+          <div className="flex items-center gap-3 flex-wrap">
+            {mounted && (lastImport || lastActivity) && (
+              <div className="flex flex-col items-end text-right">
+                {lastImport && (
+                  <span className="label-mono" style={{ color: 'var(--muted2)' }}>
+                    Contacts {new Date(lastImport).toLocaleDateString()}
+                  </span>
+                )}
+                {lastActivity && (
+                  <span className="label-mono" style={{ color: 'var(--muted2)' }}>
+                    Activities {new Date(lastActivity).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
             )}
             <CSVUploader onImport={onImport} />
           </div>
