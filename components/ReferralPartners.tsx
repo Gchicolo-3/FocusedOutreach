@@ -6,6 +6,7 @@ import { getPartners, setPartners, updatePartner, logPartnerTouch } from '@/lib/
 import { getPartnerNurtureText, getPartnerNurtureEmail, getPartnerLinkedIn } from '@/lib/messages';
 import { computeStatus, defaultTierForPartner } from '@/lib/cadence';
 import { C, F, labelMono, btnPrimary, btnSecondary, btnGhost, pillStyle, inputBase } from '@/lib/design';
+import MessageCard from '@/components/MessageCard';
 
 const tierPill: Record<RelationshipTier, 'purple' | 'teal' | 'amber'> = { A: 'purple', B: 'teal', C: 'amber' };
 const statusPill: Record<string, { label: string; variant: 'red' | 'amber' | 'accent' }> = {
@@ -269,17 +270,33 @@ export default function ReferralPartners() {
                     <button onClick={() => logTouch(partner.id)} style={btnPrimary}>
                       Log touch today
                     </button>
-                    <button onClick={() => copyText(getPartnerNurtureText(partner), `${partner.id}-text`)} style={btnSecondary}>
-                      {copied === `${partner.id}-text` ? 'Copied' : 'Copy text'}
+                    <button
+                      onClick={() => copyText(getPartnerNurtureEmail(partner), `${partner.id}-email`)}
+                      style={btnSecondary}
+                    >
+                      {copied === `${partner.id}-email` ? 'Copied' : 'Copy email template'}
                     </button>
-                    <button onClick={() => copyText(getPartnerNurtureEmail(partner), `${partner.id}-email`)} style={btnSecondary}>
-                      {copied === `${partner.id}-email` ? 'Copied' : 'Copy email'}
-                    </button>
-                    <button onClick={() => copyText(getPartnerLinkedIn(partner), `${partner.id}-li`)} style={btnSecondary}>
-                      {copied === `${partner.id}-li` ? 'Copied' : 'Copy LinkedIn'}
+                    <button
+                      onClick={() => copyText(getPartnerLinkedIn(partner), `${partner.id}-li`)}
+                      style={btnSecondary}
+                    >
+                      {copied === `${partner.id}-li` ? 'Copied' : 'Copy LinkedIn template'}
                     </button>
                   </div>
-                  <div style={{ ...labelMono, marginBottom: 8 }}>Notes</div>
+                  <MessageCard
+                    contactName={`${partner.firstName} ${partner.lastName}`}
+                    company={partner.company}
+                    email={partner.email}
+                    phone={partner.phone}
+                    channel="text"
+                    initialMessage={getPartnerNurtureText(partner)}
+                    intel={
+                      partner.notes ||
+                      `${partner.partnerType} referral partner at ${partner.company}. ${partner.referralCount} referrals given.`
+                    }
+                    lastTouch={partner.lastTouch}
+                  />
+                  <div style={{ ...labelMono, marginBottom: 8, marginTop: 16 }}>Notes</div>
                   <textarea
                     placeholder="Add notes..."
                     value={notes[partner.id] ?? partner.notes}

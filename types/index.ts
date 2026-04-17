@@ -23,6 +23,8 @@ export type Lead = {
   broker?: string;
   channel: Channel;
   lastTouch?: string;
+  email?: string;
+  phone?: string;
 };
 
 export type Broker = {
@@ -110,4 +112,10 @@ export type DailyTask = {
   leadTier?: 1 | 2 | 3;
   context: string;
   message: string;
+  email?: string;
+  phone?: string;
+  broker?: string;
+  subject?: string;
+  intel?: string;
+  lastTouch?: string;
 };

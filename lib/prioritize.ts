@@ -61,6 +61,10 @@ function brokerToTask(b: Broker): DailyTask {
     tier: b.tier,
     context: `${b.dealCount} deals · Last touch: ${b.lastTouch || 'Never'}`,
     message: getBrokerNurtureText(b),
+    email: b.email,
+    phone: b.mobile || b.phone,
+    intel: b.notes || `${b.dealCount} deals given · Tier ${b.tier} broker`,
+    lastTouch: b.lastTouch,
   };
 }
 
@@ -78,6 +82,10 @@ function partnerToTask(p: Partner): DailyTask {
     tier: p.tier,
     context: `${p.referralCount} referrals · Last touch: ${p.lastTouch || 'Never'}`,
     message: getPartnerNurtureText(p),
+    email: p.email,
+    phone: p.phone,
+    intel: p.notes || `${p.partnerType} partner · ${p.referralCount} referrals`,
+    lastTouch: p.lastTouch,
   };
 }
 
@@ -105,6 +113,12 @@ function prospectToTask(p: Lead): DailyTask {
     leadTier: p.tier,
     context: p.comments || p.subject || '',
     message: getLeadMessage(p),
+    email: p.email,
+    phone: p.phone,
+    broker: p.broker,
+    subject: p.subject,
+    intel: p.comments || p.subject,
+    lastTouch: p.lastTouch || p.date,
   };
 }
 
@@ -119,6 +133,10 @@ function coldToTask(c: ColdBroker): DailyTask {
     channel: 'email',
     context: `${c.title} · ${c.email}`,
     message: getColdBrokerIntro(c.name, c.firm),
+    email: c.email,
+    phone: c.mobile || c.phone,
+    intel: `${c.title} at ${c.firm} · cold intro candidate`,
+    subject: `Quick intro — Focus Studio`,
   };
 }
 

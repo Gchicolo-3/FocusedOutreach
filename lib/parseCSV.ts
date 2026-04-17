@@ -281,6 +281,8 @@ export function parseCSV(csvText: string, existingTags: Map<string, ContactType>
         broker,
         channel: 'call',
         lastTouch: getValue('date'),
+        email: email || undefined,
+        phone: mobile || undefined,
       };
       lead.tier = prioritizeLead(lead);
       lead.channel = assignChannel(lead);
@@ -442,6 +444,8 @@ export function enrichLeadsWithActivities(
       comments,
       broker,
       lastTouch: act.date || lead.lastTouch,
+      email: lead.email,
+      phone: lead.phone,
     };
     updated.tier = prioritizeLead(updated);
     updated.channel = assignChannel(updated);

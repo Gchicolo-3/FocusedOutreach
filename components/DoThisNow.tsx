@@ -15,7 +15,10 @@ import {
   initDefaultColdBrokers,
 } from '@/lib/storage';
 import { selectDaily5 } from '@/lib/prioritize';
-import { C, F, labelMono, btnPrimary, btnSecondary, btnGhost, pillStyle } from '@/lib/design';
+import { C, F, labelMono, btnSecondary, btnGhost, pillStyle } from '@/lib/design';
+import MessageCard from '@/components/MessageCard';
+
+type MsgChannel = 'text' | 'email' | 'linkedin' | 'call';
 
 const channelPill: Record<string, 'accent' | 'blue' | 'amber' | 'purple'> = {
   call: 'accent',
@@ -51,7 +54,6 @@ export default function DoThisNow() {
   const [tasks, setTasks] = useState<DailyTask[]>([]);
   const [doneIds, setDoneIds] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
 
   useEffect(() => {
     initDefaultBrokers();
@@ -78,12 +80,6 @@ export default function DoThisNow() {
   function handleSnooze(id: string) {
     snoozeLead(id, 2);
     setTasks((prev) => prev.filter((t) => t.id !== id));
-  }
-
-  function copyMessage(text: string, id: string) {
-    navigator.clipboard.writeText(text);
-    setCopied(id);
-    setTimeout(() => setCopied(null), 2000);
   }
 
   const doneCount = tasks.filter((t) => doneIds.has(t.id)).length;
@@ -211,26 +207,19 @@ export default function DoThisNow() {
                     </div>
                   </div>
                 )}
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ ...labelMono, marginBottom: 8 }}>Message</div>
-                  <div
-                    style={{
-                      background: C.surface2,
-                      border: `1px solid ${C.border}`,
-                      borderRadius: 12,
-                      padding: 14,
-                      fontSize: 13,
-                      lineHeight: 1.7,
-                      whiteSpace: 'pre-wrap',
-                    }}
-                  >
-                    {task.message}
-                  </div>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  <button onClick={() => copyMessage(task.message, task.id)} style={btnPrimary}>
-                    {copied === task.id ? 'Copied' : 'Copy message'}
-                  </button>
+                <MessageCard
+                  contactName={task.name}
+                  company={task.company}
+                  email={task.email}
+                  phone={task.phone}
+                  channel={task.channel as MsgChannel}
+                  initialMessage={task.message}
+                  subject={task.subject}
+                  intel={task.intel || task.context}
+                  broker={task.broker}
+                  lastTouch={task.lastTouch}
+                />
+                <div className="flex gap-2 flex-wrap" style={{ marginTop: 16 }}>
                   <button
                     onClick={() => handleDone(task.id)}
                     disabled={isDone}
