@@ -24,7 +24,7 @@ export default function MessageCard({
   company,
   email,
   phone,
-  channel,
+  channel: initialChannel,
   initialMessage,
   subject,
   intel,
@@ -32,6 +32,7 @@ export default function MessageCard({
   opportunity,
   lastTouch,
 }: MessageCardProps) {
+  const [activeChannel, setActiveChannel] = useState<GenerateChannel>(initialChannel);
   const [message, setMessage] = useState(initialMessage);
   const [msgSubject, setMsgSubject] = useState(subject || '');
   const [generating, setGenerating] = useState(false);
@@ -42,6 +43,14 @@ export default function MessageCard({
 
   const firstName = contactName.split(' ')[0];
 
+  const channels: GenerateChannel[] = ['text', 'email', 'linkedin', 'call'];
+  const channelLabels: Record<GenerateChannel, string> = {
+    text: '💬 Text',
+    email: '✉️ Email',
+    linkedin: '🔗 LinkedIn',
+    call: '📞 Call',
+  };
+
   async function handleGenerate() {
     setGenerating(true);
     setError('');
@@ -49,14 +58,14 @@ export default function MessageCard({
       const generated = await generateMessage({
         contactName,
         company,
-        channel,
+        channel: activeChannel,
         intel,
         broker,
         opportunity,
         lastTouch,
       });
 
-      if (channel === 'email' && generated.startsWith('Subject:')) {
+      if (activeChannel === 'email' && generated.startsWith('Subject:')) {
         const firstLineEnd = generated.indexOf('\n');
         const subjLine = generated.slice(0, firstLineEnd >= 0 ? firstLineEnd : generated.length);
         const rest = firstLineEnd >= 0 ? generated.slice(firstLineEnd + 1) : '';
@@ -75,7 +84,7 @@ export default function MessageCard({
 
   async function handleCopy() {
     const fullText =
-      channel === 'email' && msgSubject ? `Subject: ${msgSubject}\n\n${message}` : message;
+      activeChannel === 'email' && msgSubject ? `Subject: ${msgSubject}\n\n${message}` : message;
     try {
       await navigator.clipboard.writeText(fullText);
       setCopied(true);
@@ -136,7 +145,32 @@ export default function MessageCard({
 
   return (
     <div style={{ marginTop: 12 }}>
-      {channel === 'email' && (
+      {/* Channel switcher */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
+        {channels.map((ch) => (
+          <button
+            key={ch}
+            onClick={() => setActiveChannel(ch)}
+            style={{
+              fontFamily: F.mono,
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              padding: '6px 10px',
+              borderRadius: 6,
+              cursor: 'pointer',
+              background: activeChannel === ch ? C.accentBg : 'transparent',
+              color: activeChannel === ch ? C.accent : C.muted,
+              border: `1px solid ${activeChannel === ch ? 'rgba(200,240,74,0.3)' : C.border}`,
+              transition: 'all 0.15s',
+            }}
+          >
+            {channelLabels[ch]}
+          </button>
+        ))}
+      </div>
+
+      {activeChannel === 'email' && (
         <div style={{ marginBottom: 12 }}>
           <div style={{ ...labelMono, marginBottom: 6 }}>Subject</div>
           <input
@@ -152,7 +186,7 @@ export default function MessageCard({
       <textarea
         value={message}
         onChange={(e) => setMessage(e.target.value)}
-        rows={channel === 'email' ? 6 : 3}
+        rows={activeChannel === 'email' ? 6 : 3}
         style={{ ...inputBase, resize: 'vertical', lineHeight: 1.7, marginBottom: 12 }}
       />
 
@@ -195,7 +229,7 @@ export default function MessageCard({
           border: copied ? 'rgba(200,240,74,0.3)' : C.border,
         })}
 
-        {(channel === 'text' || channel === 'call') &&
+        {(activeChannel === 'text' || activeChannel === 'call') &&
           actionBtn({
             onClick: handleSendText,
             label: '📱 Open in Messages',
@@ -204,7 +238,7 @@ export default function MessageCard({
             border: 'rgba(255,201,74,0.25)',
           })}
 
-        {channel === 'email' &&
+        {activeChannel === 'email' &&
           email &&
           actionBtn({
             onClick: handleSendEmail,
