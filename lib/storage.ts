@@ -32,6 +32,77 @@ const KEYS = {
   activities: 'fs_activities',
 } as const;
 
+// ============ CHUNKED STORAGE ============
+// Splits large arrays across multiple localStorage keys to avoid 5MB limit
+
+const CHUNK_SIZE = 150;
+
+function getChunked<T>(baseKey: string): T[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    // Check for chunk count
+    const countRaw = localStorage.getItem(`${baseKey}_chunks`);
+    if (countRaw) {
+      const count = parseInt(countRaw, 10);
+      const result: T[] = [];
+      for (let i = 0; i < count; i++) {
+        const raw = localStorage.getItem(`${baseKey}_${i}`);
+        if (raw) {
+          const chunk = JSON.parse(raw) as T[];
+          result.push(...chunk);
+        }
+      }
+      return result;
+    }
+    // Fall back to single key (legacy)
+    const raw = localStorage.getItem(baseKey);
+    return raw ? (JSON.parse(raw) as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function setChunked<T>(baseKey: string, items: T[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    // Clear old chunks
+    const oldCountRaw = localStorage.getItem(`${baseKey}_chunks`);
+    if (oldCountRaw) {
+      const oldCount = parseInt(oldCountRaw, 10);
+      for (let i = 0; i < oldCount; i++) {
+        localStorage.removeItem(`${baseKey}_${i}`);
+      }
+    }
+    // Clear legacy single key
+    localStorage.removeItem(baseKey);
+
+    if (items.length === 0) {
+      localStorage.removeItem(`${baseKey}_chunks`);
+      return;
+    }
+
+    // Write new chunks
+    const chunks: T[][] = [];
+    for (let i = 0; i < items.length; i += CHUNK_SIZE) {
+      chunks.push(items.slice(i, i + CHUNK_SIZE));
+    }
+
+    for (let i = 0; i < chunks.length; i++) {
+      localStorage.setItem(`${baseKey}_${i}`, JSON.stringify(chunks[i]));
+    }
+    localStorage.setItem(`${baseKey}_chunks`, String(chunks.length));
+  } catch (e) {
+    console.error(`[storage] setChunked failed for ${baseKey}:`, e);
+    // Try to save at least partial data
+    try {
+      const partial = items.slice(0, Math.floor(items.length / 2));
+      localStorage.setItem(baseKey, JSON.stringify(partial));
+    } catch {
+      console.error(`[storage] partial save also failed for ${baseKey}`);
+    }
+  }
+}
+
 function get<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
   try {
@@ -44,23 +115,27 @@ function get<T>(key: string, fallback: T): T {
 
 function set<T>(key: string, value: T): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(key, JSON.stringify(value));
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.error(`[storage] set failed for ${key}:`, e);
+  }
 }
 
-// Prospects
+// ============ PROSPECTS ============
 export function getProspects(): Lead[] {
-  return get<Lead[]>(KEYS.prospects, []);
+  return getChunked<Lead>(KEYS.prospects);
 }
 export function setProspects(leads: Lead[]): void {
-  set(KEYS.prospects, leads);
+  setChunked(KEYS.prospects, leads);
 }
 
-// Brokers
+// ============ BROKERS ============
 export function getBrokers(): Broker[] {
-  return get<Broker[]>(KEYS.brokers, []);
+  return getChunked<Broker>(KEYS.brokers);
 }
 export function setBrokers(brokers: Broker[]): void {
-  set(KEYS.brokers, brokers);
+  setChunked(KEYS.brokers, brokers);
 }
 export function updateBroker(id: string, updates: Partial<Broker>): void {
   const brokers = getBrokers();
@@ -70,7 +145,7 @@ export function updateBroker(id: string, updates: Partial<Broker>): void {
   merged.nextDue = computeNextDue(merged.lastTouch, merged.tier);
   merged.status = computeStatus(merged.lastTouch, merged.tier);
   brokers[idx] = merged;
-  set(KEYS.brokers, brokers);
+  setBrokers(brokers);
 }
 export function logBrokerTouch(id: string): void {
   const today = new Date().toISOString().split('T')[0];
@@ -78,12 +153,12 @@ export function logBrokerTouch(id: string): void {
   logTouch(id, today, 'text');
 }
 
-// Partners
+// ============ PARTNERS ============
 export function getPartners(): Partner[] {
-  return get<Partner[]>(KEYS.partners, []);
+  return getChunked<Partner>(KEYS.partners);
 }
 export function setPartners(partners: Partner[]): void {
-  set(KEYS.partners, partners);
+  setChunked(KEYS.partners, partners);
 }
 export function updatePartner(id: string, updates: Partial<Partner>): void {
   const partners = getPartners();
@@ -92,7 +167,7 @@ export function updatePartner(id: string, updates: Partial<Partner>): void {
   const merged = { ...partners[idx], ...updates };
   merged.nextDue = computeNextDue(merged.lastTouch, merged.tier);
   partners[idx] = merged;
-  set(KEYS.partners, partners);
+  setPartners(partners);
 }
 export function logPartnerTouch(id: string): void {
   const today = new Date().toISOString().split('T')[0];
@@ -100,15 +175,15 @@ export function logPartnerTouch(id: string): void {
   logTouch(id, today, 'text');
 }
 
-// Uncategorized
+// ============ UNCATEGORIZED ============
 export function getUncategorized(): UncategorizedContact[] {
-  return get<UncategorizedContact[]>(KEYS.uncategorized, []);
+  return getChunked<UncategorizedContact>(KEYS.uncategorized);
 }
 export function setUncategorized(contacts: UncategorizedContact[]): void {
-  set(KEYS.uncategorized, contacts);
+  setChunked(KEYS.uncategorized, contacts);
 }
 
-// Cold brokers
+// ============ COLD BROKERS ============
 export function getColdBrokers(): ColdBroker[] {
   return get<ColdBroker[]>(KEYS.coldBrokers, []);
 }
@@ -124,7 +199,7 @@ export function updateColdBroker(id: string, updates: Partial<ColdBroker>): void
   }
 }
 
-// Done
+// ============ DONE ============
 export function getDone(): DoneEntry[] {
   return get<DoneEntry[]>(KEYS.done, []);
 }
@@ -136,7 +211,7 @@ export function markDone(id: string, date: string): void {
   }
 }
 
-// Snoozed
+// ============ SNOOZED ============
 export function getSnoozed(): SnoozedEntry[] {
   return get<SnoozedEntry[]>(KEYS.snoozed, []);
 }
@@ -151,7 +226,7 @@ export function snoozeLead(id: string, days: number): void {
   set(KEYS.snoozed, snoozed);
 }
 
-// Touch log
+// ============ TOUCH LOG ============
 export function getTouchLog(): TouchLogEntry[] {
   return get<TouchLogEntry[]>(KEYS.touchLog, []);
 }
@@ -161,7 +236,7 @@ export function logTouch(id: string, date: string, channel: Channel): void {
   set(KEYS.touchLog, log);
 }
 
-// Notes
+// ============ NOTES ============
 export function getNotes(): NoteEntry[] {
   return get<NoteEntry[]>(KEYS.notes, []);
 }
@@ -176,7 +251,7 @@ export function getNote(id: string): string {
   return getNotes().find((n) => n.id === id)?.text || '';
 }
 
-// User tags (for uncategorized → categorized)
+// ============ USER TAGS ============
 export function getUserTags(): UserTag[] {
   return get<UserTag[]>(KEYS.userTags, []);
 }
@@ -189,7 +264,7 @@ export function setUserTag(id: string, type: ContactType, tier?: RelationshipTie
   set(KEYS.userTags, tags);
 }
 
-// Last import
+// ============ LAST IMPORT ============
 export function getLastImport(): string | null {
   return get<string | null>(KEYS.lastImport, null);
 }
@@ -203,14 +278,66 @@ export function setLastActivityImport(date: string): void {
   set(KEYS.lastActivityImport, date);
 }
 
-// Activities (from activity report CSV, keyed by normalized contact name)
+// ============ ACTIVITIES ============
 import type { ActivityRecord } from './parseCSV';
+
 export function getActivities(): Record<string, ActivityRecord> {
-  return get<Record<string, ActivityRecord>>(KEYS.activities, {});
+  if (typeof window === 'undefined') return {};
+  try {
+    // Activities stored in chunks keyed by index
+    const countRaw = localStorage.getItem('fs_activities_chunks');
+    if (countRaw) {
+      const count = parseInt(countRaw, 10);
+      const result: Record<string, ActivityRecord> = {};
+      for (let i = 0; i < count; i++) {
+        const raw = localStorage.getItem(`fs_activities_${i}`);
+        if (raw) {
+          const chunk = JSON.parse(raw) as Record<string, ActivityRecord>;
+          Object.assign(result, chunk);
+        }
+      }
+      return result;
+    }
+    // Legacy single key fallback
+    const raw = localStorage.getItem(KEYS.activities);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
 }
+
 export function setActivities(activities: Record<string, ActivityRecord>): void {
-  set(KEYS.activities, activities);
+  if (typeof window === 'undefined') return;
+  try {
+    // Clear old chunks
+    const oldCountRaw = localStorage.getItem('fs_activities_chunks');
+    if (oldCountRaw) {
+      const oldCount = parseInt(oldCountRaw, 10);
+      for (let i = 0; i < oldCount; i++) {
+        localStorage.removeItem(`fs_activities_${i}`);
+      }
+    }
+    localStorage.removeItem(KEYS.activities);
+
+    const entries = Object.entries(activities);
+    if (entries.length === 0) {
+      localStorage.removeItem('fs_activities_chunks');
+      return;
+    }
+
+    const ACTIVITY_CHUNK = 200;
+    let chunkIdx = 0;
+    for (let i = 0; i < entries.length; i += ACTIVITY_CHUNK) {
+      const chunk = Object.fromEntries(entries.slice(i, i + ACTIVITY_CHUNK));
+      localStorage.setItem(`fs_activities_${chunkIdx}`, JSON.stringify(chunk));
+      chunkIdx++;
+    }
+    localStorage.setItem('fs_activities_chunks', String(chunkIdx));
+  } catch (e) {
+    console.error('[storage] setActivities failed:', e);
+  }
 }
+
 export function mergeActivities(incoming: Record<string, ActivityRecord>): Record<string, ActivityRecord> {
   const existing = getActivities();
   const merged = { ...existing };
@@ -237,7 +364,7 @@ export function mergeActivities(incoming: Record<string, ActivityRecord>): Recor
   return merged;
 }
 
-// Text sent tracking
+// ============ TEXT SENT ============
 export function getTextSent(): Record<string, string> {
   return get<Record<string, string>>(KEYS.textSent, {});
 }
@@ -247,7 +374,56 @@ export function markTextSent(id: string): void {
   set(KEYS.textSent, sent);
 }
 
-// Initialize hardcoded starter brokers
+// ============ EXPORT ============
+export function exportAllToCSV(): void {
+  const prospects = getProspects();
+  const brokers = getBrokers();
+  const partners = getPartners();
+
+  const rows: string[] = [
+    'Type,First Name,Last Name,Company,Email,Phone,Tier,Last Touch,Next Due,Notes/Subject,Status'
+  ];
+
+  for (const p of prospects) {
+    const name = p.contact.split(' ');
+    const first = name[0] || '';
+    const last = name.slice(1).join(' ') || '';
+    const notes = (p.comments || p.subject || '').replace(/,/g, ';').replace(/\n/g, ' ');
+    rows.push(`Prospect,${first},${last},${p.company},${p.email || ''},${p.phone || ''},${p.tier},${p.lastTouch || p.date || ''},,${notes},`);
+  }
+
+  for (const b of brokers) {
+    const notes = (b.notes || '').replace(/,/g, ';').replace(/\n/g, ' ');
+    rows.push(`Broker,${b.firstName},${b.lastName},${b.firm},${b.email || ''},${b.mobile || b.phone || ''},${b.tier},${b.lastTouch},${b.nextDue},${notes},${b.status}`);
+  }
+
+  for (const p of partners) {
+    const notes = (p.notes || '').replace(/,/g, ';').replace(/\n/g, ' ');
+    rows.push(`Partner,${p.firstName},${p.lastName},${p.company},${p.email || ''},${p.phone || ''},${p.tier},${p.lastTouch},${p.nextDue},${notes},`);
+  }
+
+  const csv = rows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `focus-studio-contacts-${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============ CLEAR ALL ============
+export function clearAllData(): void {
+  if (typeof window === 'undefined') return;
+  const keysToRemove: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith('fs_')) keysToRemove.push(k);
+  }
+  keysToRemove.forEach((k) => localStorage.removeItem(k));
+}
+
+// ============ INIT DEFAULTS ============
 export function initDefaultBrokers(): void {
   if (getBrokers().length > 0) return;
 
@@ -287,7 +463,6 @@ export function initDefaultBrokers(): void {
   setBrokers(brokers);
 }
 
-// Initialize hardcoded ZoomInfo cold brokers
 export function initDefaultColdBrokers(): void {
   if (getColdBrokers().length > 0) return;
 
@@ -302,6 +477,12 @@ export function initDefaultColdBrokers(): void {
     { id: 'zi-8', name: 'Charles Parmelli', title: 'EMD', firm: 'Cushman & Wakefield', email: 'cparmelli@cushmanwakefield.com', phone: '(973) 908-6105', status: 'new' },
     { id: 'zi-9', name: 'Eric Staar', title: 'SVP', firm: 'JLL', email: 'eric.staar@jll.com', phone: '(973) 404-1487', mobile: '(973) 944-8931', status: 'new' },
     { id: 'zi-10', name: 'Colby Scruggs', title: 'SVP', firm: 'Newmark', email: 'colby.scruggs@nmrk.com', phone: '(201) 528-0846', status: 'new' },
+    { id: 'zi-11', name: 'Chat Stacey', title: 'Sr Sales Coordinator', firm: 'JLL', email: 'chat.stacey@jll.com', phone: '(212) 812-5728', status: 'new' },
+    { id: 'zi-12', name: 'Jeff Arnold', title: 'Managing Member', firm: 'Forge Commercial Real Estate', email: 'jarnold@forgecre.com', phone: '', status: 'new' },
+    { id: 'zi-13', name: 'Glenn Beyer', title: 'Senior Managing Director', firm: 'Newmark', email: 'glenn.beyer@nmrk.com', phone: '(973) 222-7133', status: 'new' },
+    { id: 'zi-14', name: 'Michael Kuzmuk', title: 'Senior Managing Director', firm: 'Newmark', email: 'michael.kuzmuk@nmrk.com', phone: '(973) 699-8357', status: 'new' },
+    { id: 'zi-15', name: 'Edward Duenas', title: 'Executive Director', firm: 'Cushman & Wakefield', email: 'edward.duenas@cushmanwakefield.com', phone: '(201) 207-1398', status: 'new' },
+    { id: 'zi-16', name: 'Jeffrey Prezant', title: 'Executive Managing Director', firm: 'Cushman & Wakefield', email: 'jeffrey.prezant@cushwake.com', phone: '', status: 'new' },
   ];
 
   setColdBrokers(defaults);
