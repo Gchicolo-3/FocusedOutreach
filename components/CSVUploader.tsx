@@ -205,7 +205,7 @@ export default function CSVUploader({ onImport }: { onImport: () => void }) {
         setProgress('Enriching with activity data...');
         await new Promise((r) => setTimeout(r, 0));
 
-        const storedActivities = getActivities();
+        const storedActivities = await getActivities();
         const enrichedProspects = enrichLeadsWithActivities(prospects, storedActivities);
         const enrichedBrokersNew = enrichBrokersWithActivities(brokers, storedActivities);
         const enrichedPartnersNew = enrichPartnersWithActivities(partners, storedActivities);
@@ -214,7 +214,7 @@ export default function CSVUploader({ onImport }: { onImport: () => void }) {
         await new Promise((r) => setTimeout(r, 0));
 
         // Merge brokers
-        const existingBrokers = getBrokers();
+        const existingBrokers = await getBrokers();
         const brokerMap = new Map(existingBrokers.map((b) => [b.id, b]));
         for (const b of enrichedBrokersNew) {
           if (!brokerMap.has(b.id)) brokerMap.set(b.id, b);
@@ -222,7 +222,7 @@ export default function CSVUploader({ onImport }: { onImport: () => void }) {
         const mergedBrokers = Array.from(brokerMap.values());
 
         // Merge partners
-        const existingPartners = getPartners();
+        const existingPartners = await getPartners();
         const partnerMap = new Map(existingPartners.map((p) => [p.id, p]));
         for (const p of enrichedPartnersNew) {
           if (!partnerMap.has(p.id)) partnerMap.set(p.id, p);
@@ -230,7 +230,7 @@ export default function CSVUploader({ onImport }: { onImport: () => void }) {
         const mergedPartners = Array.from(partnerMap.values());
 
         // Merge prospects
-        const existingProspects = getProspects();
+        const existingProspects = await getProspects();
         const prospectMap = new Map(existingProspects.map((p) => [p.id, p]));
         for (const p of enrichedProspects) {
           if (!prospectMap.has(p.id)) prospectMap.set(p.id, p);
@@ -240,10 +240,10 @@ export default function CSVUploader({ onImport }: { onImport: () => void }) {
         setProgress('Saving...');
         await new Promise((r) => setTimeout(r, 0));
 
-        setProspects(mergedProspects);
-        setBrokers(mergedBrokers);
-        setPartners(mergedPartners);
-        setUncategorized(uncategorized);
+        await setProspects(mergedProspects);
+        await setBrokers(mergedBrokers);
+        await setPartners(mergedPartners);
+        await setUncategorized(uncategorized);
         setLastImport(new Date().toISOString());
 
         setProgress('');
@@ -327,18 +327,23 @@ export default function CSVUploader({ onImport }: { onImport: () => void }) {
         setProgress(`Merging ${count} contact records...`);
         await new Promise((r) => setTimeout(r, 0));
 
-        const merged = mergeActivities(allActivities);
+        const merged = await mergeActivities(allActivities);
 
         setProgress('Updating contacts with activity data...');
         await new Promise((r) => setTimeout(r, 0));
 
-        const enrichedProspects = enrichLeadsWithActivities(getProspects(), merged);
-        const enrichedBrokers = enrichBrokersWithActivities(getBrokers(), merged);
-        const enrichedPartners = enrichPartnersWithActivities(getPartners(), merged);
+        const [currentProspects, currentBrokers, currentPartners] = await Promise.all([
+          getProspects(),
+          getBrokers(),
+          getPartners(),
+        ]);
+        const enrichedProspects = enrichLeadsWithActivities(currentProspects, merged);
+        const enrichedBrokers = enrichBrokersWithActivities(currentBrokers, merged);
+        const enrichedPartners = enrichPartnersWithActivities(currentPartners, merged);
 
-        setProspects(enrichedProspects);
-        setBrokers(enrichedBrokers);
-        setPartners(enrichedPartners);
+        await setProspects(enrichedProspects);
+        await setBrokers(enrichedBrokers);
+        await setPartners(enrichedPartners);
         setLastActivityImport(new Date().toISOString());
 
         const t1 = enrichedProspects.filter((p) => p.tier === 1).length;

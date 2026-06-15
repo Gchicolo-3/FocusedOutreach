@@ -39,13 +39,19 @@ export default function Header({ onImport, refreshKey }: { onImport: () => void;
   useEffect(() => {
     setLastImportState(getLastImport());
     setLastActivityState(getLastActivityImport());
-    const prospects = getProspects();
-    setStats({
-      prospects: prospects.length,
-      brokers: getBrokers().length,
-      partners: getPartners().length,
-      tier1: prospects.filter((p) => p.tier === 1).length,
-    });
+    (async () => {
+      const [prospects, brokers, partners] = await Promise.all([
+        getProspects(),
+        getBrokers(),
+        getPartners(),
+      ]);
+      setStats({
+        prospects: prospects.length,
+        brokers: brokers.length,
+        partners: partners.length,
+        tier1: prospects.filter((p) => p.tier === 1).length,
+      });
+    })();
     setToday(
       new Date().toLocaleDateString('en-US', {
         weekday: 'long',
