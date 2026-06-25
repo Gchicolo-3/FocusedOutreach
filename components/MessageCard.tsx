@@ -36,11 +36,14 @@ export default function MessageCard({
   const [message, setMessage] = useState(initialMessage);
   const [msgSubject, setMsgSubject] = useState(subject || '');
   const [generating, setGenerating] = useState(false);
+  const [hasGenerated, setHasGenerated] = useState(false);
   const [copied, setCopied] = useState(false);
   const [phoneInput, setPhoneInput] = useState(phone || '');
   const [showPhoneInput, setShowPhoneInput] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
+
+  const firstName = contactName.split(' ')[0] || contactName;
 
   const channels: GenerateChannel[] = ['text', 'email', 'linkedin', 'call'];
   const channelLabels: Record<GenerateChannel, string> = {
@@ -73,6 +76,8 @@ export default function MessageCard({
       } else {
         setMessage(generated);
       }
+      setHasGenerated(true);
+      setInfo('Draft ready — edit it below before sending');
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
       setError(m || 'Generation failed');
@@ -88,14 +93,13 @@ export default function MessageCard({
       await navigator.clipboard.writeText(fullText);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch (e) {
+    } catch {
       setError('Clipboard copy failed');
     }
   }
 
-  // Copy the composed message to the clipboard, then open the app with the
-  // recipient prefilled. The deep links are intentionally bare (no body/subject)
-  // so iOS opens the right app every time — George pastes the message in.
+  // Texts: the sms: link is intentionally bare (number only) so iOS always opens
+  // Messages. We copy the composed message to the clipboard so George can paste it.
   async function handleSendText() {
     const p = phoneInput || phone || '';
     if (!p) {
@@ -105,27 +109,27 @@ export default function MessageCard({
     setError('');
     try {
       await copyToClipboard(message);
-      setInfo('Message copied — paste it in Messages');
+      setInfo('Copied to clipboard — paste it in Messages');
     } catch {
       setInfo('Opening Messages — copy the message manually');
     }
     openInMessages(p);
   }
 
+  // Email: prefill subject + body directly in the mailto link so Outlook opens
+  // with the draft ready. Also copy to clipboard as a backstop.
   async function handleSendEmail() {
     if (!email) {
       setError('No email on file');
       return;
     }
     setError('');
-    const full = msgSubject ? `Subject: ${msgSubject}\n\n${message}` : message;
+    const subjectLine = msgSubject || `Focus Studio — ${firstName}`;
     try {
-      await copyToClipboard(full);
-      setInfo('Email copied — paste it in your mail app');
-    } catch {
-      setInfo('Opening mail — copy the message manually');
-    }
-    openInOutlook(email);
+      await copyToClipboard(`Subject: ${subjectLine}\n\n${message}`);
+    } catch { /* clipboard unavailable — body is still prefilled in the link */ }
+    setInfo('Opening Outlook — subject and message prefilled');
+    openInOutlook(email, subjectLine, message);
   }
 
   const actionBtn = (opts: {
@@ -220,7 +224,7 @@ export default function MessageCard({
               setShowPhoneInput(false);
               try {
                 await copyToClipboard(message);
-                setInfo('Message copied — paste it in Messages');
+                setInfo('Copied to clipboard — paste it in Messages');
               } catch { /* clipboard unavailable */ }
               openInMessages(phoneInput);
             },
@@ -241,6 +245,16 @@ export default function MessageCard({
           color: C.purple,
           border: 'rgba(180,157,255,0.25)',
         })}
+
+        {hasGenerated &&
+          actionBtn({
+            onClick: handleGenerate,
+            disabled: generating,
+            label: generating ? '✨ Regenerating...' : '↻ Regenerate',
+            bg: 'rgba(180,157,255,0.06)',
+            color: C.purple,
+            border: 'rgba(180,157,255,0.2)',
+          })}
 
         {actionBtn({
           onClick: handleCopy,

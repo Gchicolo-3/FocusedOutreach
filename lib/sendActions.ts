@@ -1,11 +1,13 @@
 // Deep links for the OS's default apps.
 //
-// IMPORTANT (iPhone bug fix): links must be BARE — protocol + recipient only,
-// no ?body= / ?subject= parameters. On iOS, an sms: link with a "?body=" (the
-// wrong delimiter — iOS expects "&body=") or a mailto: with an encoded body can
-// make the OS misroute, e.g. opening Messages for an email. Stripping all
-// parameters makes email always open the mail app and text always open
-// Messages. The message body is handled separately via Copy → paste.
+// iPhone routing rules learned the hard way:
+//   - sms: must be BARE — protocol + number only. An sms: link with "?body="
+//     uses the wrong delimiter for iOS (it expects "&body=") and can make the OS
+//     misroute, e.g. opening Mail for a text. So we keep sms: bare and hand the
+//     message off via clipboard (copy → paste in Messages).
+//   - mailto: is the standard, well-supported scheme. subject/body encoded with
+//     encodeURIComponent open correctly in the default mail app (Outlook
+//     included) on both iOS and desktop, so we DO prefill those.
 
 // Digits only. iOS/Android dialers and Messages accept a bare digit string;
 // a leading "+" is preserved for international numbers.
@@ -38,12 +40,17 @@ export function openInMessages(phone: string): void {
 }
 
 // Opens the default mail app (Outlook if that's the default) to the recipient,
-// no subject/body. Pair with copyToClipboard for the message.
-export function openInOutlook(email: string): void {
+// with subject and body prefilled. Format: mailto:[email]?subject=...&body=...
+// with each value run through encodeURIComponent. Works on iOS + desktop.
+export function openInOutlook(email: string, subject?: string, body?: string): void {
   if (typeof window === 'undefined') return;
   const e = (email || '').trim();
   if (!e) return;
-  window.location.href = `mailto:${e}`;
+  const params: string[] = [];
+  if (subject) params.push(`subject=${encodeURIComponent(subject)}`);
+  if (body) params.push(`body=${encodeURIComponent(body)}`);
+  const qs = params.length ? `?${params.join('&')}` : '';
+  window.location.href = `mailto:${e}${qs}`;
 }
 
 export function openLinkedIn(linkedinUrl: string): void {
