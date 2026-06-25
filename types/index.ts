@@ -23,6 +23,7 @@ export type Lead = {
   broker?: string;
   channel: Channel;
   lastTouch?: string;
+  nextDue?: string;
   email?: string;
   phone?: string;
 };
@@ -84,8 +85,30 @@ export type UncategorizedContact = {
 export type DoneEntry = { id: string; date: string };
 export type SnoozedEntry = { id: string; until: string };
 export type NoteEntry = { id: string; text: string };
-export type TouchLogEntry = { id: string; date: string; channel: Channel };
+export type TouchLogEntry = { id: string; date: string; channel: Channel; spoke?: boolean; notes?: string };
+export type PinnedEntry = { id: string; date: string; source: TaskSource };
 export type UserTag = { id: string; type: ContactType; tier?: RelationshipTier };
+
+// Source of a task / contact across the four entity pools.
+export type TaskSource = 'broker' | 'partner' | 'prospect' | 'cold_broker';
+
+// Sort options available on every tab.
+export type SortKey =
+  | 'priority'
+  | 'last_contact'
+  | 'overdue'
+  | 'contact_type'
+  | 'company';
+
+// One row from a cross-pool contact search (used by Do This Now manual add).
+export type ContactSearchResult = {
+  id: string;
+  source: TaskSource;
+  name: string;
+  company: string;
+  email?: string;
+  phone?: string;
+};
 
 export type SequenceStep = {
   day: number;
@@ -118,4 +141,13 @@ export type DailyTask = {
   subject?: string;
   intel?: string;
   lastTouch?: string;
+  // Enrichment computed at selection time
+  pinned?: boolean;
+  reason?: string;
+  daysSinceTouch?: number;
+  naCount?: number;
+  grade?: RelationshipTier;
+  title?: string;
+  firstName?: string;
+  lastName?: string;
 };

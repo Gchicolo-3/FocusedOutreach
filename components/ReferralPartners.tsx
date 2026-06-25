@@ -1,12 +1,23 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Partner, PartnerType, RelationshipTier } from '@/types';
-import { getPartners, setPartners, updatePartner, logPartnerTouch } from '@/lib/storage';
+import { useState, useEffect, useCallback } from 'react';
+import { Partner, PartnerType, RelationshipTier, SortKey } from '@/types';
+import {
+  getPartners,
+  setPartners,
+  updatePartner,
+  logPartnerTouch,
+  getPinsToday,
+  addPin,
+  removePin,
+  supabaseConfigured,
+} from '@/lib/storage';
 import { getPartnerNurtureText, getPartnerNurtureEmail, getPartnerLinkedIn } from '@/lib/messages';
-import { computeStatus, defaultTierForPartner } from '@/lib/cadence';
+import { computeStatus, defaultTierForPartner, daysSince } from '@/lib/cadence';
 import { C, F, labelMono, btnPrimary, btnSecondary, btnGhost, pillStyle, inputBase } from '@/lib/design';
 import MessageCard from '@/components/MessageCard';
+import ContactLinks from '@/components/ContactLinks';
+import SortBar from '@/components/SortBar';
 
 const tierPill: Record<RelationshipTier, 'purple' | 'teal' | 'amber'> = { A: 'purple', B: 'teal', C: 'amber' };
 const statusPill: Record<string, { label: string; variant: 'red' | 'amber' | 'accent' }> = {
@@ -38,6 +49,9 @@ export default function ReferralPartners() {
   const [copied, setCopied] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [showAdd, setShowAdd] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+  const [sort, setSort] = useState<SortKey>('priority');
   const [newPartner, setNewPartner] = useState({
     firstName: '',
     lastName: '',
@@ -45,14 +59,24 @@ export default function ReferralPartners() {
     partnerType: 'other' as PartnerType,
   });
 
-  useEffect(() => {
-    (async () => {
-      await refresh();
-    })();
+  const refresh = useCallback(async () => {
+    const [p, pins] = await Promise.all([getPartners(), getPinsToday()]);
+    setPartnersState(p);
+    setPinnedIds(new Set(pins.map((x) => x.id)));
+    setLoading(false);
   }, []);
 
-  async function refresh() {
-    setPartnersState(await getPartners());
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      await refresh();
+    })();
+  }, [refresh]);
+
+  async function togglePin(id: string) {
+    if (pinnedIds.has(id)) await removePin(id);
+    else await addPin(id, 'partner');
+    await refresh();
   }
 
   async function logTouch(id: string) {
@@ -105,24 +129,53 @@ export default function ReferralPartners() {
   }
 
   const sorted = [...partners].sort((a, b) => {
-    const order: Record<string, number> = { overdue: 0, due_soon: 1, on_track: 2 };
-    const sa = order[computeStatus(a.lastTouch, a.tier)];
-    const sb = order[computeStatus(b.lastTouch, b.tier)];
-    if (sa !== sb) return sa - sb;
-    const tierOrder = { A: 0, B: 1, C: 2 };
-    return tierOrder[a.tier] - tierOrder[b.tier];
+    switch (sort) {
+      case 'last_contact':
+        return (b.lastTouch || '').localeCompare(a.lastTouch || '');
+      case 'overdue':
+        return daysSince(b.lastTouch) - daysSince(a.lastTouch);
+      case 'company':
+        return (a.company || '').localeCompare(b.company || '');
+      case 'contact_type':
+        return (a.partnerType || '').localeCompare(b.partnerType || '');
+      case 'priority':
+      default: {
+        const order: Record<string, number> = { overdue: 0, due_soon: 1, on_track: 2 };
+        const sa = order[computeStatus(a.lastTouch, a.tier)];
+        const sb = order[computeStatus(b.lastTouch, b.tier)];
+        if (sa !== sb) return sa - sb;
+        const tierOrder = { A: 0, B: 1, C: 2 };
+        return tierOrder[a.tier] - tierOrder[b.tier];
+      }
+    }
   });
+
+  if (loading) {
+    return (
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 32, textAlign: 'center', color: C.muted }} className="fade-up">
+        Loading referral partners from Supabase…
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4 fade-up">
-      <div className="flex items-baseline justify-between">
+      {!supabaseConfigured && (
+        <div style={{ background: C.redBg, border: `1px solid ${C.red}`, borderRadius: 12, padding: 20, color: C.red }}>
+          Not connected to Supabase. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to load partners.
+        </div>
+      )}
+      <div className="flex items-baseline justify-between gap-3 flex-wrap">
         <div>
           <h2 style={{ fontFamily: F.display, fontSize: 18, fontWeight: 700, color: C.text }}>Referral Partners</h2>
           <span style={labelMono}>{sorted.length} total</span>
         </div>
-        <button onClick={() => setShowAdd(!showAdd)} style={showAdd ? btnGhost : btnPrimary}>
-          {showAdd ? 'Cancel' : '+ Add partner'}
-        </button>
+        <div className="flex items-center gap-3 flex-wrap">
+          <SortBar value={sort} onChange={setSort} />
+          <button onClick={() => setShowAdd(!showAdd)} style={showAdd ? btnGhost : btnPrimary}>
+            {showAdd ? 'Cancel' : '+ Add partner'}
+          </button>
+        </div>
       </div>
 
       {showAdd && (
@@ -241,6 +294,9 @@ export default function ReferralPartners() {
               {isExpanded && (
                 <div style={{ padding: '16px 20px 20px', borderTop: `1px solid ${C.border}` }}>
                   <div style={{ marginBottom: 16 }}>
+                    <ContactLinks email={partner.email} phone={partner.phone} title={partner.title} />
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
                     <div style={{ ...labelMono, marginBottom: 8 }}>Type</div>
                     <select
                       value={partner.partnerType}
@@ -271,6 +327,9 @@ export default function ReferralPartners() {
                   <div className="flex gap-2 flex-wrap" style={{ marginBottom: 16 }}>
                     <button onClick={() => logTouch(partner.id)} style={btnPrimary}>
                       Log touch today
+                    </button>
+                    <button onClick={() => togglePin(partner.id)} style={btnSecondary}>
+                      {pinnedIds.has(partner.id) ? '📌 Pinned' : 'Pin to today'}
                     </button>
                     <button
                       onClick={() => copyText(getPartnerNurtureEmail(partner), `${partner.id}-email`)}

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { generateMessage, GenerateChannel } from '@/lib/toneProfile';
-import { openInMessages, openInOutlook } from '@/lib/sendActions';
+import { openInMessages, openInOutlook, copyToClipboard } from '@/lib/sendActions';
 import { C, F, labelMono, inputBase } from '@/lib/design';
 
 type MessageCardProps = {
@@ -40,8 +40,7 @@ export default function MessageCard({
   const [phoneInput, setPhoneInput] = useState(phone || '');
   const [showPhoneInput, setShowPhoneInput] = useState(false);
   const [error, setError] = useState('');
-
-  const firstName = contactName.split(' ')[0];
+  const [info, setInfo] = useState('');
 
   const channels: GenerateChannel[] = ['text', 'email', 'linkedin', 'call'];
   const channelLabels: Record<GenerateChannel, string> = {
@@ -94,21 +93,39 @@ export default function MessageCard({
     }
   }
 
-  function handleSendText() {
+  // Copy the composed message to the clipboard, then open the app with the
+  // recipient prefilled. The deep links are intentionally bare (no body/subject)
+  // so iOS opens the right app every time — George pastes the message in.
+  async function handleSendText() {
     const p = phoneInput || phone || '';
     if (!p) {
       setShowPhoneInput(true);
       return;
     }
-    openInMessages(p, message);
+    setError('');
+    try {
+      await copyToClipboard(message);
+      setInfo('Message copied — paste it in Messages');
+    } catch {
+      setInfo('Opening Messages — copy the message manually');
+    }
+    openInMessages(p);
   }
 
-  function handleSendEmail() {
+  async function handleSendEmail() {
     if (!email) {
       setError('No email on file');
       return;
     }
-    openInOutlook(email, msgSubject || `Focus Studio — ${firstName}`, message);
+    setError('');
+    const full = msgSubject ? `Subject: ${msgSubject}\n\n${message}` : message;
+    try {
+      await copyToClipboard(full);
+      setInfo('Email copied — paste it in your mail app');
+    } catch {
+      setInfo('Opening mail — copy the message manually');
+    }
+    openInOutlook(email);
   }
 
   const actionBtn = (opts: {
@@ -199,9 +216,13 @@ export default function MessageCard({
             style={{ ...inputBase, flex: 1 }}
           />
           {actionBtn({
-            onClick: () => {
+            onClick: async () => {
               setShowPhoneInput(false);
-              openInMessages(phoneInput, message);
+              try {
+                await copyToClipboard(message);
+                setInfo('Message copied — paste it in Messages');
+              } catch { /* clipboard unavailable */ }
+              openInMessages(phoneInput);
             },
             label: 'Open Messages',
             bg: C.amberBg,
@@ -260,6 +281,20 @@ export default function MessageCard({
           }}
         >
           {error}
+        </div>
+      )}
+
+      {info && (
+        <div
+          style={{
+            ...labelMono,
+            color: C.accent,
+            marginTop: 8,
+            textTransform: 'none',
+            letterSpacing: '0.02em',
+          }}
+        >
+          {info}
         </div>
       )}
     </div>

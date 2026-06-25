@@ -1,5 +1,5 @@
-import { Lead, Broker, Partner, ColdBroker, DailyTask } from '@/types';
-import { computeStatus, daysSince } from './cadence';
+import { Lead, Broker, Partner, ColdBroker, DailyTask, TaskSource } from '@/types';
+import { computeStatus, daysSince, CADENCE_DAYS } from './cadence';
 import { getLeadMessage, getBrokerNurtureText, getPartnerNurtureText, getColdBrokerIntro } from './messages';
 
 const TIER_1_KEYWORDS = [
@@ -46,7 +46,7 @@ export function assignChannel(lead: Lead): Lead['channel'] {
   return 'email';
 }
 
-function brokerToTask(b: Broker): DailyTask {
+export function brokerToTask(b: Broker): DailyTask {
   const status = computeStatus(b.lastTouch, b.tier);
   const label =
     status === 'overdue' ? `Tier ${b.tier} Overdue` : status === 'due_soon' ? `Tier ${b.tier} Due Soon` : `Tier ${b.tier}`;
@@ -56,19 +56,24 @@ function brokerToTask(b: Broker): DailyTask {
     source: 'broker',
     label,
     name: `${b.firstName} ${b.lastName}`,
+    firstName: b.firstName,
+    lastName: b.lastName,
+    title: b.title,
     company: b.firm,
     channel: 'text',
     tier: b.tier,
+    grade: b.tier,
     context: `${b.dealCount} deals · Last touch: ${b.lastTouch || 'Never'}`,
     message: getBrokerNurtureText(b),
     email: b.email,
     phone: b.mobile || b.phone,
     intel: b.notes || `${b.dealCount} deals given · Tier ${b.tier} broker`,
     lastTouch: b.lastTouch,
+    daysSinceTouch: daysSince(b.lastTouch),
   };
 }
 
-function partnerToTask(p: Partner): DailyTask {
+export function partnerToTask(p: Partner): DailyTask {
   const status = computeStatus(p.lastTouch, p.tier);
   const label = status === 'overdue' ? `Partner ${p.tier} Overdue` : `Partner ${p.tier}`;
   return {
@@ -77,19 +82,24 @@ function partnerToTask(p: Partner): DailyTask {
     source: 'partner',
     label,
     name: `${p.firstName} ${p.lastName}`,
+    firstName: p.firstName,
+    lastName: p.lastName,
+    title: p.title,
     company: p.company,
     channel: 'text',
     tier: p.tier,
+    grade: p.tier,
     context: `${p.referralCount} referrals · Last touch: ${p.lastTouch || 'Never'}`,
     message: getPartnerNurtureText(p),
     email: p.email,
     phone: p.phone,
     intel: p.notes || `${p.partnerType} partner · ${p.referralCount} referrals`,
     lastTouch: p.lastTouch,
+    daysSinceTouch: daysSince(p.lastTouch),
   };
 }
 
-function prospectToTask(p: Lead): DailyTask {
+export function prospectToTask(p: Lead): DailyTask {
   let score = 30;
   let label = 'Prospect';
   if (p.tier === 1) {
@@ -102,12 +112,15 @@ function prospectToTask(p: Lead): DailyTask {
     score = 30;
     label = 'Cold';
   }
+  const parts = (p.contact || '').split(' ');
   return {
     id: p.id,
     score,
     source: 'prospect',
     label,
     name: p.contact,
+    firstName: parts[0] || '',
+    lastName: parts.slice(1).join(' '),
     company: p.company,
     channel: p.channel,
     leadTier: p.tier,
@@ -119,16 +132,21 @@ function prospectToTask(p: Lead): DailyTask {
     subject: p.subject,
     intel: p.comments || p.subject,
     lastTouch: p.lastTouch || p.date,
+    daysSinceTouch: daysSince(p.lastTouch || p.date),
   };
 }
 
-function coldToTask(c: ColdBroker): DailyTask {
+export function coldToTask(c: ColdBroker): DailyTask {
+  const parts = (c.name || '').split(' ');
   return {
     id: c.id,
     score: 40,
     source: 'cold_broker',
     label: 'New Broker',
     name: c.name,
+    firstName: parts[0] || '',
+    lastName: parts.slice(1).join(' '),
+    title: c.title,
     company: c.firm,
     channel: 'email',
     context: `${c.title} · ${c.email}`,
@@ -138,6 +156,61 @@ function coldToTask(c: ColdBroker): DailyTask {
     intel: `${c.title} at ${c.firm} · cold intro candidate`,
     subject: `Quick intro — Focus Studio`,
   };
+}
+
+// ============ TASK RESOLUTION + REASONS (Do This Now) ============
+
+export type Pools = {
+  prospects: Lead[];
+  brokers: Broker[];
+  partners: Partner[];
+  coldBrokers: ColdBroker[];
+};
+
+// Resolve any contact id back to a DailyTask (used for pins + manual add).
+export function taskForId(id: string, source: TaskSource, pools: Pools): DailyTask | null {
+  if (source === 'broker') {
+    const b = pools.brokers.find((x) => x.id === id);
+    return b ? brokerToTask(b) : null;
+  }
+  if (source === 'partner') {
+    const p = pools.partners.find((x) => x.id === id);
+    return p ? partnerToTask(p) : null;
+  }
+  if (source === 'cold_broker') {
+    const c = pools.coldBrokers.find((x) => x.id === id);
+    return c ? coldToTask(c) : null;
+  }
+  const p = pools.prospects.find((x) => x.id === id);
+  return p ? prospectToTask(p) : null;
+}
+
+// Human-readable "why this is on the list today" line.
+export function reasonFor(task: DailyTask): string {
+  if ((task.naCount || 0) >= 3) {
+    return `${task.naCount} NAs — recommend pausing or changing channel`;
+  }
+  const days = task.daysSinceTouch ?? (task.lastTouch ? daysSince(task.lastTouch) : 9999);
+  const hasTouch = task.lastTouch && days < 9999;
+
+  if (task.source === 'broker' || task.source === 'partner') {
+    const grade = task.grade || 'B';
+    const overdue = days - CADENCE_DAYS[grade];
+    const kind = task.source === 'broker' ? 'Tier' : 'Partner';
+    if (!hasTouch) return `${kind} ${grade} — never contacted`;
+    if (overdue > 0) return `${kind} ${grade} — ${overdue} day${overdue === 1 ? '' : 's'} overdue`;
+    return `${kind} ${grade} — due in ${-overdue} day${-overdue === 1 ? '' : 's'}`;
+  }
+
+  if (task.source === 'prospect') {
+    if (task.leadTier === 1) {
+      return task.broker ? `Hot prospect — broker intel from ${task.broker}` : 'Hot prospect — high intent intel';
+    }
+    if (task.leadTier === 2) return hasTouch ? `Warm prospect — ${days} days since touch` : 'Warm prospect';
+    return hasTouch ? `Cold prospect — ${days} days since touch` : 'Cold prospect — no recent activity';
+  }
+
+  return 'New broker — cold intro candidate';
 }
 
 export function selectDaily5(

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Broker, ColdBroker, RelationshipTier } from '@/types';
+import { useState, useEffect, useCallback } from 'react';
+import { Broker, ColdBroker, RelationshipTier, SortKey } from '@/types';
 import {
   getBrokers,
   setBrokers,
@@ -11,11 +11,17 @@ import {
   getColdBrokers,
   updateColdBroker,
   initDefaultColdBrokers,
+  getPinsToday,
+  addPin,
+  removePin,
+  supabaseConfigured,
 } from '@/lib/storage';
 import { getBrokerNurtureText, getBrokerNurtureEmail, getBrokerLinkedIn } from '@/lib/messages';
-import { computeStatus } from '@/lib/cadence';
+import { computeStatus, daysSince } from '@/lib/cadence';
 import { C, F, labelMono, btnPrimary, btnSecondary, btnGhost, pillStyle, inputBase } from '@/lib/design';
 import MessageCard from '@/components/MessageCard';
+import ContactLinks from '@/components/ContactLinks';
+import SortBar from '@/components/SortBar';
 
 const tierPill: Record<RelationshipTier, 'purple' | 'teal' | 'amber'> = {
   A: 'purple',
@@ -39,19 +45,31 @@ export default function BrokerEngine() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+  const [sort, setSort] = useState<SortKey>('priority');
+
+  const refresh = useCallback(async () => {
+    const [b, cb, pins] = await Promise.all([getBrokers(), getColdBrokers(), getPinsToday()]);
+    setBrokersState(b);
+    setColdBrokersState(cb);
+    setPinnedIds(new Set(pins.map((p) => p.id)));
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     (async () => {
+      setLoading(true);
       await initDefaultBrokers();
       await initDefaultColdBrokers();
       await refresh();
     })();
-  }, []);
+  }, [refresh]);
 
-  async function refresh() {
-    const [b, cb] = await Promise.all([getBrokers(), getColdBrokers()]);
-    setBrokersState(b);
-    setColdBrokersState(cb);
+  async function togglePin(id: string) {
+    if (pinnedIds.has(id)) await removePin(id);
+    else await addPin(id, 'broker');
+    await refresh();
   }
 
   async function logTouch(id: string) {
@@ -106,12 +124,23 @@ export default function BrokerEngine() {
   }
 
   const sortedBrokers = [...brokers].sort((a, b) => {
-    const order: Record<string, number> = { overdue: 0, due_soon: 1, on_track: 2 };
-    const sa = order[computeStatus(a.lastTouch, a.tier)];
-    const sb = order[computeStatus(b.lastTouch, b.tier)];
-    if (sa !== sb) return sa - sb;
-    const tierOrder = { A: 0, B: 1, C: 2 };
-    return tierOrder[a.tier] - tierOrder[b.tier];
+    switch (sort) {
+      case 'last_contact':
+        return (b.lastTouch || '').localeCompare(a.lastTouch || '');
+      case 'overdue':
+        return daysSince(b.lastTouch) - daysSince(a.lastTouch);
+      case 'company':
+        return (a.firm || '').localeCompare(b.firm || '');
+      case 'priority':
+      default: {
+        const order: Record<string, number> = { overdue: 0, due_soon: 1, on_track: 2 };
+        const sa = order[computeStatus(a.lastTouch, a.tier)];
+        const sb = order[computeStatus(b.lastTouch, b.tier)];
+        if (sa !== sb) return sa - sb;
+        const tierOrder = { A: 0, B: 1, C: 2 };
+        return tierOrder[a.tier] - tierOrder[b.tier];
+      }
+    }
   });
 
   const sectionHeader = (title: string, count: string) => (
@@ -121,10 +150,29 @@ export default function BrokerEngine() {
     </div>
   );
 
+  if (loading) {
+    return (
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 32, textAlign: 'center', color: C.muted }} className="fade-up">
+        Loading brokers from Supabase…
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-8 fade-up">
+      {!supabaseConfigured && (
+        <div style={{ background: C.redBg, border: `1px solid ${C.red}`, borderRadius: 12, padding: 20, color: C.red }}>
+          Not connected to Supabase. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your deployment to load brokers.
+        </div>
+      )}
       <section>
-        {sectionHeader('Active Brokers', `${sortedBrokers.length} total`)}
+        <div className="flex items-baseline justify-between mb-4 gap-3 flex-wrap">
+          <div className="flex items-baseline gap-3">
+            <h2 style={{ fontFamily: F.display, fontSize: 18, fontWeight: 700, color: C.text }}>Active Brokers</h2>
+            <span style={labelMono}>{sortedBrokers.length} total</span>
+          </div>
+          <SortBar value={sort} onChange={setSort} options={['priority', 'last_contact', 'overdue', 'company']} />
+        </div>
         <div className="flex flex-col gap-3">
           {sortedBrokers.map((broker) => {
             const status = computeStatus(broker.lastTouch, broker.tier);
@@ -187,6 +235,9 @@ export default function BrokerEngine() {
                 {isExpanded && (
                   <div style={{ padding: '16px 20px 20px', borderTop: `1px solid ${C.border}` }}>
                     <div style={{ marginBottom: 16 }}>
+                      <ContactLinks email={broker.email} phone={broker.mobile || broker.phone} title={broker.title} />
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
                       <div style={{ ...labelMono, marginBottom: 8 }}>Tier</div>
                       <div className="flex gap-2">
                         {(['A', 'B', 'C'] as RelationshipTier[]).map((t) => (
@@ -203,6 +254,9 @@ export default function BrokerEngine() {
                     <div className="flex gap-2 flex-wrap" style={{ marginBottom: 16 }}>
                       <button onClick={() => logTouch(broker.id)} style={btnPrimary}>
                         Log touch today
+                      </button>
+                      <button onClick={() => togglePin(broker.id)} style={btnSecondary}>
+                        {pinnedIds.has(broker.id) ? '📌 Pinned' : 'Pin to today'}
                       </button>
                       <button
                         onClick={() => copyText(getBrokerNurtureEmail(broker), `${broker.id}-email`)}

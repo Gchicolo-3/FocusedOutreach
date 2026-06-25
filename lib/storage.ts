@@ -1,23 +1,56 @@
 import { supabase } from './supabase';
 import {
   Lead, Broker, Partner, ColdBroker, UncategorizedContact,
-  DoneEntry, SnoozedEntry, NoteEntry, TouchLogEntry,
-  UserTag, Channel, RelationshipTier, ContactType,
+  DoneEntry, SnoozedEntry, NoteEntry, TouchLogEntry, PinnedEntry,
+  UserTag, Channel, RelationshipTier, ContactType, TaskSource, ContactSearchResult,
 } from '@/types';
-import { computeNextDue, computeStatus } from './cadence';
+import { computeNextDue, computeStatus, quickLogDays, addDaysISO } from './cadence';
 export type { ActivityRecord } from './parseCSV';
 import type { ActivityRecord } from './parseCSV';
 
+export { supabaseConfigured } from './supabase';
+
+// Supabase caps a single select at 1000 rows. Page through so growing tables
+// (brokers is already ~460) never silently truncate.
+async function fetchAll<T = Record<string, unknown>>(
+  table: string
+): Promise<T[]> {
+  const PAGE = 1000;
+  const out: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from(table)
+      .select('*')
+      .range(from, from + PAGE - 1);
+    if (error) { console.error(`[fetchAll ${table}]`, error); break; }
+    const rows = (data || []) as T[];
+    out.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+  return out;
+}
+
+// Coercion helpers for loosely-typed DB rows.
+const s = (v: unknown): string => (v == null ? '' : String(v));
+const so = (v: unknown): string | undefined => {
+  if (v == null) return undefined;
+  const str = String(v);
+  return str === '' ? undefined : str;
+};
+const n = (v: unknown): number => {
+  const num = Number(v);
+  return Number.isFinite(num) ? num : 0;
+};
+
 // ============ PROSPECTS ============
 export async function getProspects(): Promise<Lead[]> {
-  const { data, error } = await supabase.from('prospects').select('*');
-  if (error) { console.error(error); return []; }
-  return (data || []).map(r => ({
-    id: r.id, company: r.company, contact: r.contact,
-    subject: r.subject, activityType: r.activity_type, date: r.date,
-    status: r.status, priority: r.priority, comments: r.comments,
-    tier: r.tier, broker: r.broker, channel: r.channel,
-    lastTouch: r.last_touch, email: r.email, phone: r.phone,
+  const data = await fetchAll('prospects');
+  return data.map(r => ({
+    id: s(r.id), company: s(r.company), contact: s(r.contact),
+    subject: s(r.subject), activityType: s(r.activity_type), date: s(r.date),
+    status: s(r.status), priority: s(r.priority), comments: s(r.comments),
+    tier: (n(r.tier) || 3) as 1 | 2 | 3, broker: so(r.broker), channel: s(r.channel) as Channel,
+    lastTouch: so(r.last_touch), nextDue: so(r.next_due), email: so(r.email), phone: so(r.phone),
   }));
 }
 
@@ -28,7 +61,8 @@ export async function setProspects(leads: Lead[]): Promise<void> {
     subject: l.subject, activity_type: l.activityType, date: l.date,
     status: l.status, priority: l.priority, comments: l.comments,
     tier: l.tier, broker: l.broker || null, channel: l.channel,
-    last_touch: l.lastTouch || null, email: l.email || null, phone: l.phone || null,
+    last_touch: l.lastTouch || null, next_due: l.nextDue || null,
+    email: l.email || null, phone: l.phone || null,
   }));
   // Upsert in batches of 100
   for (let i = 0; i < rows.length; i += 100) {
@@ -37,17 +71,27 @@ export async function setProspects(leads: Lead[]): Promise<void> {
   }
 }
 
+export async function updateProspect(id: string, updates: Partial<Lead>): Promise<void> {
+  const row: Record<string, unknown> = {};
+  if (updates.lastTouch !== undefined) row.last_touch = updates.lastTouch || null;
+  if (updates.nextDue !== undefined) row.next_due = updates.nextDue || null;
+  if (updates.tier !== undefined) row.tier = updates.tier;
+  if (updates.comments !== undefined) row.comments = updates.comments;
+  if (Object.keys(row).length === 0) return;
+  const { error } = await supabase.from('prospects').update(row).eq('id', id);
+  if (error) console.error('updateProspect error:', error);
+}
+
 // ============ BROKERS ============
 export async function getBrokers(): Promise<Broker[]> {
-  const { data, error } = await supabase.from('brokers').select('*');
-  if (error) { console.error(error); return []; }
-  return (data || []).map(r => ({
-    id: r.id, firstName: r.first_name, lastName: r.last_name,
-    firm: r.firm, title: r.title, email: r.email, phone: r.phone,
-    mobile: r.mobile, linkedin: r.linkedin, tier: r.tier,
-    dealCount: r.deal_count, dealNames: r.deal_names || [],
-    lastTouch: r.last_touch, nextDue: r.next_due, notes: r.notes,
-    status: r.status,
+  const data = await fetchAll('brokers');
+  return data.map(r => ({
+    id: s(r.id), firstName: s(r.first_name), lastName: s(r.last_name),
+    firm: s(r.firm), title: s(r.title), email: so(r.email), phone: so(r.phone),
+    mobile: so(r.mobile), linkedin: so(r.linkedin), tier: (s(r.tier) || 'C') as RelationshipTier,
+    dealCount: n(r.deal_count), dealNames: (r.deal_names as string[]) || [],
+    lastTouch: s(r.last_touch), nextDue: s(r.next_due), notes: s(r.notes),
+    status: (s(r.status) || 'on_track') as Broker['status'],
   }));
 }
 
@@ -94,14 +138,13 @@ export async function logBrokerTouch(id: string): Promise<void> {
 
 // ============ PARTNERS ============
 export async function getPartners(): Promise<Partner[]> {
-  const { data, error } = await supabase.from('partners').select('*');
-  if (error) { console.error(error); return []; }
-  return (data || []).map(r => ({
-    id: r.id, firstName: r.first_name, lastName: r.last_name,
-    company: r.company, title: r.title, partnerType: r.partner_type,
-    tier: r.tier, referralCount: r.referral_count,
-    lastTouch: r.last_touch, nextDue: r.next_due, notes: r.notes,
-    email: r.email, phone: r.phone,
+  const data = await fetchAll('partners');
+  return data.map(r => ({
+    id: s(r.id), firstName: s(r.first_name), lastName: s(r.last_name),
+    company: s(r.company), title: s(r.title), partnerType: (s(r.partner_type) || 'other') as Partner['partnerType'],
+    tier: (s(r.tier) || 'C') as RelationshipTier, referralCount: n(r.referral_count),
+    lastTouch: s(r.last_touch), nextDue: s(r.next_due), notes: s(r.notes),
+    email: so(r.email), phone: so(r.phone),
   }));
 }
 
@@ -143,9 +186,7 @@ export async function logPartnerTouch(id: string): Promise<void> {
 
 // ============ COLD BROKERS ============
 export async function getColdBrokers(): Promise<ColdBroker[]> {
-  const { data, error } = await supabase.from('cold_brokers').select('*');
-  if (error) { console.error(error); return []; }
-  return data || [];
+  return fetchAll<ColdBroker>('cold_brokers');
 }
 
 export async function setColdBrokers(brokers: ColdBroker[]): Promise<void> {
@@ -194,14 +235,119 @@ export async function snoozeLead(id: string, days: number): Promise<void> {
 
 // ============ TOUCH LOG ============
 export async function getTouchLog(): Promise<TouchLogEntry[]> {
-  const { data, error } = await supabase.from('touch_log').select('*');
-  if (error) { console.error(error); return []; }
-  return (data || []).map(r => ({ id: r.contact_id, date: r.date, channel: r.channel }));
+  const data = await fetchAll('touch_log');
+  return data.map(r => ({
+    id: s(r.contact_id), date: s(r.date), channel: s(r.channel) as Channel,
+    spoke: typeof r.spoke === 'boolean' ? r.spoke : undefined, notes: so(r.notes),
+  }));
 }
 
-export async function logTouch(id: string, date: string, channel: Channel): Promise<void> {
-  const { error } = await supabase.from('touch_log').insert({ contact_id: id, date, channel });
+export async function logTouch(
+  id: string, date: string, channel: Channel, spoke?: boolean, notes?: string
+): Promise<void> {
+  const { error } = await supabase.from('touch_log').insert({
+    contact_id: id, date, channel,
+    spoke: spoke ?? null, notes: notes || '',
+  });
   if (error) console.error(error);
+}
+
+// Count consecutive "no answer" touches at the end of a contact's history.
+// Resets to 0 the moment they were last reached (spoke = true).
+export async function getConsecutiveNAs(id: string): Promise<number> {
+  const { data, error } = await supabase
+    .from('touch_log')
+    .select('spoke,date,created_at')
+    .eq('contact_id', id)
+    .order('created_at', { ascending: false });
+  if (error) { console.error(error); return 0; }
+  let count = 0;
+  for (const row of data || []) {
+    if (row.spoke === false) count++;
+    else if (row.spoke === true) break;
+  }
+  return count;
+}
+
+// ============ PINS (Do This Now — clear at midnight) ============
+export async function getPins(): Promise<PinnedEntry[]> {
+  const data = await fetchAll('pinned_entries');
+  return data.map(r => ({ id: s(r.id), date: s(r.date), source: s(r.source) as TaskSource }));
+}
+
+// Pins pinned for today only. Stale (yesterday's) pins are ignored.
+export async function getPinsToday(): Promise<PinnedEntry[]> {
+  const today = new Date().toISOString().split('T')[0];
+  const all = await getPins();
+  return all.filter(p => p.date === today);
+}
+
+export async function addPin(id: string, source: TaskSource): Promise<void> {
+  const today = new Date().toISOString().split('T')[0];
+  const { error } = await supabase.from('pinned_entries').upsert({ id, date: today, source });
+  if (error) console.error('addPin error:', error);
+}
+
+export async function removePin(id: string): Promise<void> {
+  const { error } = await supabase.from('pinned_entries').delete().eq('id', id);
+  if (error) console.error('removePin error:', error);
+}
+
+// ============ QUICK LOG ============
+// Logs an activity, advances last touch to today, and schedules the next
+// follow up using George's cadence. Never auto-changes tiers or statuses.
+export async function quickLog(opts: {
+  id: string;
+  source: TaskSource;
+  channel: Channel;
+  spoke: boolean;
+  notes?: string;
+  grade?: RelationshipTier;
+  leadTier?: 1 | 2 | 3;
+}): Promise<void> {
+  const today = new Date().toISOString().split('T')[0];
+  const days = quickLogDays({
+    source: opts.source, spoke: opts.spoke, grade: opts.grade, leadTier: opts.leadTier,
+  });
+  const nextDue = addDaysISO(days);
+
+  await logTouch(opts.id, today, opts.channel, opts.spoke, opts.notes);
+
+  if (opts.source === 'broker') {
+    await updateBroker(opts.id, { lastTouch: today });
+  } else if (opts.source === 'partner') {
+    await updatePartner(opts.id, { lastTouch: today });
+  } else if (opts.source === 'prospect') {
+    await updateProspect(opts.id, { lastTouch: today, nextDue });
+  }
+  // cold_broker has no cadence row; the touch_log entry is the record.
+}
+
+// ============ CONTACT SEARCH (manual add) ============
+export async function searchContacts(query: string): Promise<ContactSearchResult[]> {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const [prospects, brokers, partners, cold] = await Promise.all([
+    getProspects(), getBrokers(), getPartners(), getColdBrokers(),
+  ]);
+  const out: ContactSearchResult[] = [];
+  for (const p of prospects) {
+    if (`${p.contact} ${p.company}`.toLowerCase().includes(q))
+      out.push({ id: p.id, source: 'prospect', name: p.contact, company: p.company, email: p.email, phone: p.phone });
+  }
+  for (const b of brokers) {
+    if (`${b.firstName} ${b.lastName} ${b.firm}`.toLowerCase().includes(q))
+      out.push({ id: b.id, source: 'broker', name: `${b.firstName} ${b.lastName}`, company: b.firm, email: b.email, phone: b.mobile || b.phone });
+  }
+  for (const p of partners) {
+    if (`${p.firstName} ${p.lastName} ${p.company}`.toLowerCase().includes(q))
+      out.push({ id: p.id, source: 'partner', name: `${p.firstName} ${p.lastName}`, company: p.company, email: p.email, phone: p.phone });
+  }
+  for (const c of cold) {
+    if (`${c.name} ${c.firm}`.toLowerCase().includes(q))
+      out.push({ id: c.id, source: 'cold_broker', name: c.name, company: c.firm, email: c.email, phone: c.mobile || c.phone });
+  }
+  return out.slice(0, 12);
 }
 
 // ============ NOTES ============
@@ -310,33 +456,60 @@ export function markTextSent(id: string): void {
 }
 
 // ============ EXPORT ============
+// RFC-4180 style escaping so fields with commas/quotes/newlines survive a
+// Salesforce import instead of being mangled.
+function csvCell(v: unknown): string {
+  const s = v == null ? '' : String(v);
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function csvRow(cells: unknown[]): string {
+  return cells.map(csvCell).join(',');
+}
+
 export async function exportAllToCSV(): Promise<void> {
-  const [prospects, brokers, partners] = await Promise.all([
-    getProspects(), getBrokers(), getPartners()
+  const [prospects, brokers, partners, cold] = await Promise.all([
+    getProspects(), getBrokers(), getPartners(), getColdBrokers(),
   ]);
 
+  // Columns: Type, First Name, Last Name, Company, Email, Phone, Grade, Tier,
+  // Last Touch, Next Due, Notes, Status — kept close to Salesforce import shape.
   const rows: string[] = [
-    'Type,First Name,Last Name,Company,Email,Phone,Tier,Last Touch,Next Due,Notes,Status'
+    csvRow(['Type', 'First Name', 'Last Name', 'Company', 'Email', 'Phone',
+      'Grade', 'Tier', 'Last Touch', 'Next Due', 'Notes', 'Status']),
   ];
 
   for (const p of prospects) {
-    const name = p.contact.split(' ');
-    const first = name[0] || '';
-    const last = name.slice(1).join(' ') || '';
-    const notes = (p.comments || p.subject || '').replace(/,/g, ';').replace(/\n/g, ' ');
-    rows.push(`Prospect,${first},${last},${p.company},${p.email || ''},${p.phone || ''},${p.tier},${p.lastTouch || ''},,${notes},`);
+    const parts = p.contact.split(' ');
+    rows.push(csvRow([
+      'Prospect', parts[0] || '', parts.slice(1).join(' '), p.company,
+      p.email || '', p.phone || '', '', p.tier,
+      p.lastTouch || '', p.nextDue || '', p.comments || p.subject || '', p.status || '',
+    ]));
   }
   for (const b of brokers) {
-    const notes = (b.notes || '').replace(/,/g, ';').replace(/\n/g, ' ');
-    rows.push(`Broker,${b.firstName},${b.lastName},${b.firm},${b.email || ''},${b.mobile || ''},${b.tier},${b.lastTouch},${b.nextDue},${notes},${b.status}`);
+    rows.push(csvRow([
+      'Broker', b.firstName, b.lastName, b.firm, b.email || '', b.mobile || b.phone || '',
+      b.tier, '', b.lastTouch || '', b.nextDue || '', b.notes || '', b.status || '',
+    ]));
   }
   for (const p of partners) {
-    const notes = (p.notes || '').replace(/,/g, ';').replace(/\n/g, ' ');
-    rows.push(`Partner,${p.firstName},${p.lastName},${p.company},${p.email || ''},${p.phone || ''},${p.tier},${p.lastTouch},${p.nextDue},${notes},`);
+    rows.push(csvRow([
+      'Referral Partner', p.firstName, p.lastName, p.company, p.email || '', p.phone || '',
+      p.tier, '', p.lastTouch || '', p.nextDue || '', p.notes || '', '',
+    ]));
+  }
+  for (const c of cold) {
+    const parts = c.name.split(' ');
+    rows.push(csvRow([
+      'New Broker', parts[0] || '', parts.slice(1).join(' '), c.firm,
+      c.email || '', c.mobile || c.phone || '', '', '', '', '', '', c.status || '',
+    ]));
   }
 
-  const csv = rows.join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
+  const csv = rows.join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

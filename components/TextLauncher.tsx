@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   getProspects,
   getBrokers,
@@ -39,14 +39,7 @@ export default function TextLauncher() {
   const [copied, setCopied] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('all');
 
-  useEffect(() => {
-    (async () => {
-      await initDefaultBrokers();
-      await buildCards();
-    })();
-  }, []);
-
-  async function buildCards() {
+  const buildCards = useCallback(async () => {
     const [brokers, partners, prospects] = await Promise.all([
       getBrokers(),
       getPartners(),
@@ -100,7 +93,14 @@ export default function TextLauncher() {
     });
 
     setCards(allCards);
-  }
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      await initDefaultBrokers();
+      await buildCards();
+    })();
+  }, [buildCards]);
 
   function copyMessage(text: string, id: string) {
     navigator.clipboard.writeText(text);

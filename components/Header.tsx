@@ -10,6 +10,8 @@ import {
   getPartners,
 } from '@/lib/storage';
 import { C, F, labelMono } from '@/lib/design';
+import type { TabId } from './TabNav';
+import type { DoThisNowFilter } from './DoThisNow';
 
 function LiveClock() {
   const [time, setTime] = useState('');
@@ -30,7 +32,15 @@ function LiveClock() {
   return <span style={labelMono}>{time}</span>;
 }
 
-export default function Header({ onImport, refreshKey }: { onImport: () => void; refreshKey: number }) {
+export default function Header({
+  onImport,
+  refreshKey,
+  onNavigate,
+}: {
+  onImport: () => void;
+  refreshKey: number;
+  onNavigate: (tab: TabId, filter?: DoThisNowFilter) => void;
+}) {
   const [lastImport, setLastImportState] = useState<string | null>(null);
   const [lastActivity, setLastActivityState] = useState<string | null>(null);
   const [stats, setStats] = useState({ prospects: 0, brokers: 0, partners: 0, tier1: 0 });
@@ -68,6 +78,10 @@ export default function Header({ onImport, refreshKey }: { onImport: () => void;
     border: `1px solid ${C.border}`,
     borderRadius: 12,
     padding: 16,
+    textAlign: 'left',
+    cursor: 'pointer',
+    transition: 'border-color 0.15s, background 0.15s',
+    width: '100%',
   };
 
   const statNumStyle: React.CSSProperties = {
@@ -144,22 +158,42 @@ export default function Header({ onImport, refreshKey }: { onImport: () => void;
               marginTop: 24,
             }}
           >
-            <div style={statCardStyle}>
+            <button
+              type="button"
+              style={statCardStyle}
+              onClick={() => onNavigate('do-this-now', 'prospect')}
+              title="View prospects in Do This Now"
+            >
               <div style={statNumStyle}>{stats.prospects}</div>
               <div style={statLabelStyle}>Prospects</div>
-            </div>
-            <div style={statCardStyle}>
+            </button>
+            <button
+              type="button"
+              style={statCardStyle}
+              onClick={() => onNavigate('broker-engine')}
+              title="Open Broker Engine"
+            >
               <div style={statNumStyle}>{stats.brokers}</div>
               <div style={statLabelStyle}>Brokers</div>
-            </div>
-            <div style={statCardStyle}>
+            </button>
+            <button
+              type="button"
+              style={statCardStyle}
+              onClick={() => onNavigate('referral-partners')}
+              title="Open Referral Partners"
+            >
               <div style={statNumStyle}>{stats.partners}</div>
               <div style={statLabelStyle}>Partners</div>
-            </div>
-            <div style={statCardStyle}>
+            </button>
+            <button
+              type="button"
+              style={statCardStyle}
+              onClick={() => onNavigate('do-this-now', 'prospect')}
+              title="View hot prospects in Do This Now"
+            >
               <div style={{ ...statNumStyle, color: C.accent }}>{stats.tier1}</div>
               <div style={statLabelStyle}>Tier 1</div>
-            </div>
+            </button>
           </div>
         )}
       </div>

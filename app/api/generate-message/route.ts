@@ -15,13 +15,13 @@ type GenerateRequest = {
 };
 
 const channelInstructions: Record<Channel, string> = {
-  text: 'Write a text message. Max 3 short lines. Casual, warm, punchy. Open with "Hey [first name] —". No subject line.',
+  text: 'Write a text message, 3 to 4 sentences max. Casual and conversational. Open with "Hey [first name]," (comma, no dash). No subject line. Sign off "Best, George".',
   email:
-    'Write an email. Max 4 sentences. Include a subject line on the first line prefixed with "Subject: " then a blank line, then the body. Open body with "Hi [first name]," and close with "Best, George".',
+    'Write an email, 4 to 6 sentences. Put the subject line on the very first line prefixed with "Subject: ", then a blank line, then the body. Open the body with "Hey [first name]," and close with "Best, George".',
   linkedin:
-    'Write a LinkedIn message. Max 3 sentences. Professional but warm and direct. No subject line.',
+    'Write a LinkedIn connection note, 2 to 3 sentences. Warm and direct, no subject line.',
   call:
-    'Write a phone call script opener. Max 3 sentences. Natural, not salesy. Open with "Hey [first name] —". No subject line.',
+    'Write a call script as a few bullet points of key talking points (not a word-for-word script). No subject line.',
 };
 
 export async function POST(req: NextRequest) {
