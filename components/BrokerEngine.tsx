@@ -41,24 +41,27 @@ export default function BrokerEngine() {
   const [notes, setNotes] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    initDefaultBrokers();
-    initDefaultColdBrokers();
-    refresh();
+    (async () => {
+      await initDefaultBrokers();
+      await initDefaultColdBrokers();
+      await refresh();
+    })();
   }, []);
 
-  function refresh() {
-    setBrokersState(getBrokers());
-    setColdBrokersState(getColdBrokers());
+  async function refresh() {
+    const [b, cb] = await Promise.all([getBrokers(), getColdBrokers()]);
+    setBrokersState(b);
+    setColdBrokersState(cb);
   }
 
-  function logTouch(id: string) {
-    logBrokerTouch(id);
-    refresh();
+  async function logTouch(id: string) {
+    await logBrokerTouch(id);
+    await refresh();
   }
 
-  function changeTier(id: string, tier: RelationshipTier) {
-    updateBroker(id, { tier });
-    refresh();
+  async function changeTier(id: string, tier: RelationshipTier) {
+    await updateBroker(id, { tier });
+    await refresh();
   }
 
   function copyText(text: string, id: string) {
@@ -67,12 +70,12 @@ export default function BrokerEngine() {
     setTimeout(() => setCopied(null), 2000);
   }
 
-  function handleNoteChange(brokerId: string, text: string) {
+  async function handleNoteChange(brokerId: string, text: string) {
     setNotes((prev) => ({ ...prev, [brokerId]: text }));
-    updateBroker(brokerId, { notes: text });
+    await updateBroker(brokerId, { notes: text });
   }
 
-  function addToActive(coldBroker: ColdBroker) {
+  async function addToActive(coldBroker: ColdBroker) {
     const [firstName, ...rest] = coldBroker.name.split(' ');
     const newBroker: Broker = {
       id: `broker-${Date.now()}`,
@@ -91,15 +94,15 @@ export default function BrokerEngine() {
       notes: '',
       status: 'on_track',
     };
-    const updated = [...getBrokers(), newBroker];
-    setBrokers(updated);
-    updateColdBroker(coldBroker.id, { status: 'active_broker' });
-    refresh();
+    const updated = [...(await getBrokers()), newBroker];
+    await setBrokers(updated);
+    await updateColdBroker(coldBroker.id, { status: 'active_broker' });
+    await refresh();
   }
 
-  function markOutreachSent(id: string) {
-    updateColdBroker(id, { status: 'outreach_sent' });
-    refresh();
+  async function markOutreachSent(id: string) {
+    await updateColdBroker(id, { status: 'outreach_sent' });
+    await refresh();
   }
 
   const sortedBrokers = [...brokers].sort((a, b) => {

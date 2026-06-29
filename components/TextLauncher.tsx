@@ -40,14 +40,18 @@ export default function TextLauncher() {
   const [filter, setFilter] = useState<string>('all');
 
   useEffect(() => {
-    initDefaultBrokers();
-    buildCards();
+    (async () => {
+      await initDefaultBrokers();
+      await buildCards();
+    })();
   }, []);
 
-  function buildCards() {
-    const brokers = getBrokers();
-    const partners = getPartners();
-    const prospects = getProspects();
+  async function buildCards() {
+    const [brokers, partners, prospects] = await Promise.all([
+      getBrokers(),
+      getPartners(),
+      getProspects(),
+    ]);
     const allCards: TextCard[] = [];
 
     brokers.forEach((b) => {

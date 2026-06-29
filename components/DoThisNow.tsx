@@ -56,29 +56,37 @@ export default function DoThisNow() {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
-    initDefaultBrokers();
-    initDefaultColdBrokers();
-    loadTasks();
+    (async () => {
+      await initDefaultBrokers();
+      await initDefaultColdBrokers();
+      await loadTasks();
+    })();
   }, []);
 
-  function loadTasks() {
+  async function loadTasks() {
     const today = new Date().toISOString().split('T')[0];
-    const done = getDone().filter((d) => d.date === today).map((d) => d.id);
-    const snoozed = getSnoozed().filter((s) => s.until > today).map((s) => s.id);
+    const [doneAll, snoozedAll, prospects, brokers, partners, coldBrokers] = await Promise.all([
+      getDone(),
+      getSnoozed(),
+      getProspects(),
+      getBrokers(),
+      getPartners(),
+      getColdBrokers(),
+    ]);
+    const done = doneAll.filter((d) => d.date === today).map((d) => d.id);
+    const snoozed = snoozedAll.filter((s) => s.until > today).map((s) => s.id);
     setDoneIds(new Set(done));
-    setTasks(
-      selectDaily5(getProspects(), getBrokers(), getPartners(), getColdBrokers(), new Set(done), new Set(snoozed))
-    );
+    setTasks(selectDaily5(prospects, brokers, partners, coldBrokers, new Set(done), new Set(snoozed)));
   }
 
-  function handleDone(id: string) {
+  async function handleDone(id: string) {
     const today = new Date().toISOString().split('T')[0];
-    markDone(id, today);
+    await markDone(id, today);
     setDoneIds((prev) => new Set([...prev, id]));
   }
 
-  function handleSnooze(id: string) {
-    snoozeLead(id, 2);
+  async function handleSnooze(id: string) {
+    await snoozeLead(id, 2);
     setTasks((prev) => prev.filter((t) => t.id !== id));
   }
 

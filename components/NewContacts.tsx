@@ -25,13 +25,15 @@ export default function NewContacts() {
   const [filterFirm, setFilterFirm] = useState<string>('all');
 
   useEffect(() => {
-    initDefaultColdBrokers();
-    setContacts(getColdBrokers());
+    (async () => {
+      await initDefaultColdBrokers();
+      setContacts(await getColdBrokers());
+    })();
   }, []);
 
-  function changeStatus(id: string, status: ColdBroker['status']) {
-    updateColdBroker(id, { status });
-    setContacts(getColdBrokers());
+  async function changeStatus(id: string, status: ColdBroker['status']) {
+    await updateColdBroker(id, { status });
+    setContacts(await getColdBrokers());
   }
 
   const firms = ['all', ...Array.from(new Set(contacts.map((c) => c.firm)))];

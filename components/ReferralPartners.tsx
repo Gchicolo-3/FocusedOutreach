@@ -46,26 +46,28 @@ export default function ReferralPartners() {
   });
 
   useEffect(() => {
-    setPartnersState(getPartners());
+    (async () => {
+      await refresh();
+    })();
   }, []);
 
-  function refresh() {
-    setPartnersState(getPartners());
+  async function refresh() {
+    setPartnersState(await getPartners());
   }
 
-  function logTouch(id: string) {
-    logPartnerTouch(id);
-    refresh();
+  async function logTouch(id: string) {
+    await logPartnerTouch(id);
+    await refresh();
   }
 
-  function changeTier(id: string, tier: RelationshipTier) {
-    updatePartner(id, { tier });
-    refresh();
+  async function changeTier(id: string, tier: RelationshipTier) {
+    await updatePartner(id, { tier });
+    await refresh();
   }
 
-  function changeType(id: string, partnerType: PartnerType) {
-    updatePartner(id, { partnerType });
-    refresh();
+  async function changeType(id: string, partnerType: PartnerType) {
+    await updatePartner(id, { partnerType });
+    await refresh();
   }
 
   function copyText(text: string, id: string) {
@@ -74,12 +76,12 @@ export default function ReferralPartners() {
     setTimeout(() => setCopied(null), 2000);
   }
 
-  function handleNoteChange(id: string, text: string) {
+  async function handleNoteChange(id: string, text: string) {
     setNotes((prev) => ({ ...prev, [id]: text }));
-    updatePartner(id, { notes: text });
+    await updatePartner(id, { notes: text });
   }
 
-  function addPartner() {
+  async function addPartner() {
     if (!newPartner.firstName.trim()) return;
     const tier = defaultTierForPartner(newPartner.partnerType);
     const partner: Partner = {
@@ -95,9 +97,9 @@ export default function ReferralPartners() {
       nextDue: '',
       notes: '',
     };
-    const updated = [...getPartners(), partner];
-    setPartners(updated);
-    refresh();
+    const updated = [...(await getPartners()), partner];
+    await setPartners(updated);
+    await refresh();
     setShowAdd(false);
     setNewPartner({ firstName: '', lastName: '', company: '', partnerType: 'other' });
   }
