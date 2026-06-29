@@ -5,13 +5,19 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+// Reads/writes live Supabase data on every request — never prerender at build time.
+export const dynamic = 'force-dynamic';
+
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
 
 // GET /api/engine/drafts - fetch pending drafts
 export async function GET() {
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from('drafts')
     .select('*')
@@ -27,6 +33,7 @@ export async function GET() {
 
 // PATCH /api/engine/drafts - approve, edit, or kill a draft
 export async function PATCH(request: Request) {
+  const supabase = getSupabase();
   const body = await request.json();
   const { id, status, edited_body } = body;
 
