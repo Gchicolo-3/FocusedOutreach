@@ -3,6 +3,7 @@
 // Database client for Supabase
 // Reads from existing: brokers, partners, prospects, activities, touch_log
 // Writes to new: signals, drafts, watchlist, agent_runs
+// NOTE: next_due and last_touch are stored as TEXT in brokers/partners
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -16,19 +17,24 @@ const supabase = createClient(
 // ============================================================
 
 export async function getBrokersDueForTouch() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 
   const { data, error } = await supabase
     .from('brokers')
     .select('*')
     .neq('tier', 'D')
     .neq('status', 'inactive')
-    .lte('next_due', today)
-    .order('tier', { ascending: true })
-    .order('next_due', { ascending: true });
+    .order('tier', { ascending: true });
 
   if (error) throw new Error(`getBrokersDueForTouch: ${error.message}`);
-  return data || [];
+  
+  // Filter in JS since next_due is stored as text
+  const due = (data || []).filter(b => {
+    if (!b.next_due) return true; // never touched, always due
+    return b.next_due <= today;
+  });
+
+  return due;
 }
 
 export async function getPartnersDueForTouch() {
@@ -38,60 +44,59 @@ export async function getPartnersDueForTouch() {
     .from('partners')
     .select('*')
     .neq('tier', 'D')
-    .lte('next_due', today)
-    .order('tier', { ascending: true })
-    .order('next_due', { ascending: true });
+    .order('tier', { ascending: true });
 
   if (error) throw new Error(`getPartnersDueForTouch: ${error.message}`);
-  return data || [];
+
+  const due = (data || []).filter(p => {
+    if (!p.next_due) return true;
+    return p.next_due <= today;
+  });
+
+  return due;
 }
 
 export async function getBrokerById(id: string) {
-  const { data, error } = await supabase
+  const { data } = await supabase
     .from('brokers')
     .select('*')
     .eq('id', id)
     .single();
-
-  if (error) return null;
   return data;
 }
 
 export async function findBrokerByFirmOrName(name: string, firm?: string) {
   let query = supabase.from('brokers').select('*');
-
   if (firm) {
     query = query.ilike('firm', `%${firm}%`);
   } else {
     query = query.or(`first_name.ilike.%${name}%,last_name.ilike.%${name}%`);
   }
-
   const { data } = await query.limit(1);
   return data?.[0] || null;
 }
 
-// Check crossing-over: has this contact had recent activity by anyone?
 export async function getRecentActivity(contactId: string) {
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const cutoff = thirtyDaysAgo.toISOString().split('T')[0];
 
   const { data } = await supabase
     .from('touch_log')
     .select('*')
     .eq('contact_id', contactId)
-    .gte('date', thirtyDaysAgo.toISOString().split('T')[0])
+    .gte('date', cutoff)
     .order('date', { ascending: false })
     .limit(1);
 
   return data?.[0] || null;
 }
 
-// Check if contact has an open task in activities
-export async function hasOpenTask(contactKey: string) {
+export async function hasOpenTask(contactId: string) {
   const { data } = await supabase
     .from('activities')
-    .select('*')
-    .eq('contact_key', contactKey)
+    .select('id')
+    .eq('contact_id', contactId)
     .eq('status', 'pending')
     .limit(1);
 
