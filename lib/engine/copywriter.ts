@@ -48,7 +48,7 @@ OUTPUT FORMAT:
 
 Write only the message. No preamble. No explanation. No "here is a draft."`;
 
-async function callClaude(prompt: string): Promise<string> {
+async function callClaude(prompt: string, attempt = 0): Promise<string> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -63,6 +63,13 @@ async function callClaude(prompt: string): Promise<string> {
       messages: [{ role: 'user', content: prompt }]
     })
   });
+
+  // Back off and retry on rate limit / overload so a parallel batch doesn't
+  // drop drafts under transient 429/529s.
+  if ((res.status === 429 || res.status === 529) && attempt < 3) {
+    await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+    return callClaude(prompt, attempt + 1);
+  }
 
   if (!res.ok) throw new Error(`Claude API error: ${res.status}`);
   const data = await res.json();
@@ -148,56 +155,76 @@ Channel: ${channel}`;
   };
 }
 
+// Process one item: build prompt, call Claude, save the draft. Returns the
+// saved draft, or null if skipped/failed.
+async function draftItem(item: any): Promise<any | null> {
+  try {
+    const { prompt, channel, draftType, contactId, contactTable, contactName, contactCompany, signalId, signalSummary } = buildPrompt(item);
+
+    const response = await callClaude(prompt);
+
+    if (response.startsWith('SKIP:')) {
+      console.log(`[Copywriter] Skipped: ${response}`);
+      return null;
+    }
+
+    // Parse subject for email
+    let subject: string | undefined;
+    let body = response;
+
+    if (channel === 'email' && response.startsWith('SUBJECT:')) {
+      const lines = response.split('\n');
+      subject = lines[0].replace('SUBJECT:', '').trim();
+      body = lines.slice(1).join('\n').trim();
+    }
+
+    const draft = await saveDraft({
+      contact_id: contactId,
+      contact_table: contactTable,
+      contact_name: contactName,
+      contact_company: contactCompany,
+      signal_id: signalId,
+      channel,
+      subject,
+      body,
+      draft_type: draftType,
+      signal_summary: signalSummary
+    });
+
+    if (draft) {
+      console.log(`[Copywriter] Draft created for ${contactName || contactCompany || 'unknown'}`);
+      return draft;
+    }
+    return null;
+  } catch (err: any) {
+    console.error('[Copywriter] Error:', err.message);
+    return null;
+  }
+}
+
+// Bounded concurrency so a large cadence batch finishes well within Vercel's
+// function timeout (a sequential loop over ~200 contacts blew past 300s and the
+// run was killed before the digest sent). callClaude retries on 429/529.
+const COPYWRITER_CONCURRENCY = 5;
+
 export async function runCopywriter(items: any[]): Promise<any[]> {
   console.log(`[Copywriter] Drafting for ${items.length} items...`);
   const drafts: any[] = [];
 
-  for (const item of items) {
-    try {
-      const { prompt, channel, draftType, contactId, contactTable, contactName, contactCompany, signalId, signalSummary } = buildPrompt(item);
-
-      const response = await callClaude(prompt);
-
-      if (response.startsWith('SKIP:')) {
-        console.log(`[Copywriter] Skipped: ${response}`);
-        continue;
-      }
-
-      // Parse subject for email
-      let subject: string | undefined;
-      let body = response;
-
-      if (channel === 'email' && response.startsWith('SUBJECT:')) {
-        const lines = response.split('\n');
-        subject = lines[0].replace('SUBJECT:', '').trim();
-        body = lines.slice(1).join('\n').trim();
-      }
-
-      const draft = await saveDraft({
-        contact_id: contactId,
-        contact_table: contactTable,
-        contact_name: contactName,
-        contact_company: contactCompany,
-        signal_id: signalId,
-        channel,
-        subject,
-        body,
-        draft_type: draftType,
-        signal_summary: signalSummary
-      });
-
-      if (draft) {
-        drafts.push(draft);
-        console.log(`[Copywriter] Draft created for ${contactName || contactCompany || 'unknown'}`);
-      }
-
-      // Small delay to stay within Claude rate limits
-      await new Promise(r => setTimeout(r, 300));
-
-    } catch (err: any) {
-      console.error('[Copywriter] Error:', err.message);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < items.length) {
+      const item = items[cursor++];
+      const draft = await draftItem(item);
+      if (draft) drafts.push(draft);
     }
   }
+
+  const workers = Array.from(
+    { length: Math.min(COPYWRITER_CONCURRENCY, items.length) },
+    () => worker()
+  );
+  await Promise.all(workers);
 
   console.log(`[Copywriter] ${drafts.length} drafts created`);
   return drafts;
