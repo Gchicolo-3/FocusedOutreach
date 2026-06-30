@@ -12,10 +12,10 @@ import {
   updateColdBroker,
   initDefaultColdBrokers,
 } from '@/lib/storage';
-import { getBrokerNurtureText, getBrokerNurtureEmail, getBrokerLinkedIn } from '@/lib/messages';
+import { getBrokerNurtureEmail, getBrokerLinkedIn } from '@/lib/messages';
 import { computeStatus } from '@/lib/cadence';
 import { C, F, labelMono, btnPrimary, btnSecondary, btnGhost, pillStyle, inputBase } from '@/lib/design';
-import MessageCard from '@/components/MessageCard';
+import InlineCompose from '@/components/InlineCompose';
 
 const tierPill: Record<RelationshipTier, 'purple' | 'teal' | 'amber'> = {
   A: 'purple',
@@ -217,18 +217,18 @@ export default function BrokerEngine() {
                         {copied === `${broker.id}-li` ? 'Copied' : 'Copy LinkedIn template'}
                       </button>
                     </div>
-                    <MessageCard
+                    <InlineCompose
+                      contactId={broker.id}
                       contactName={`${broker.firstName} ${broker.lastName}`}
                       company={broker.firm}
                       email={broker.email}
-                      phone={broker.mobile || broker.phone}
-                      channel="text"
-                      initialMessage={getBrokerNurtureText(broker)}
+                      contactType="broker"
                       intel={
                         broker.notes ||
                         `${broker.dealCount} deals given. Tier ${broker.tier} broker at ${broker.firm}.`
                       }
                       lastTouch={broker.lastTouch}
+                      onLogged={refresh}
                     />
                     <div style={{ ...labelMono, marginBottom: 8, marginTop: 16 }}>Notes</div>
                     <textarea

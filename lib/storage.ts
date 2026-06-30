@@ -7,6 +7,7 @@ import {
 import { computeNextDue, computeStatus } from './cadence';
 export type { ActivityRecord } from './parseCSV';
 import type { ActivityRecord } from './parseCSV';
+import { normalizeContactKey } from './parseCSV';
 
 // ============ PROSPECTS ============
 export async function getProspects(): Promise<Lead[]> {
@@ -295,6 +296,55 @@ export async function mergeActivities(
   }
   await setActivities(merged);
   return merged;
+}
+
+// Logs a single outreach activity for a broker/partner and resets their
+// cadence (lastTouch -> today, which recomputes nextDue + status, and appends
+// to touch_log). Upserts one row in `activities` keyed by the contact's
+// normalized name, merging comments with any existing row for that contact.
+export async function logActivity(params: {
+  contactId: string;
+  contactType: 'broker' | 'partner';
+  fullName: string;
+  company: string;
+  subject: string;
+  comments: string;
+  activityType?: string;
+}): Promise<void> {
+  const today = new Date().toISOString().split('T')[0];
+  const key = normalizeContactKey(params.fullName);
+
+  if (key) {
+    const { data: existing } = await supabase
+      .from('activities')
+      .select('comments, priority')
+      .eq('contact_key', key)
+      .maybeSingle();
+
+    const mergedComments = [existing?.comments, params.comments]
+      .filter(Boolean)
+      .join(' | ');
+
+    const { error } = await supabase.from('activities').upsert({
+      contact_key: key,
+      full_name: params.fullName,
+      company: params.company,
+      subject: params.subject,
+      activity_type: params.activityType || 'Email',
+      date: today,
+      status: 'logged',
+      priority: existing?.priority || '',
+      comments: mergedComments,
+    });
+    if (error) console.error('logActivity error:', error);
+  }
+
+  // Reset cadence for the underlying contact.
+  if (params.contactType === 'broker') {
+    await logBrokerTouch(params.contactId);
+  } else {
+    await logPartnerTouch(params.contactId);
+  }
 }
 
 // ============ TEXT SENT ============
