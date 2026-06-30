@@ -13,6 +13,7 @@ import { sendMorningDigest } from '@/lib/engine/digest';
 import { logAgentRun } from '@/lib/engine/db';
 
 export const maxDuration = 300; // 5 min max for Vercel Pro, 60s for hobby
+export const dynamic = 'force-dynamic'; // request-time only; never prerender
 
 export async function GET(request: Request) {
   // Verify this is coming from Vercel cron or an authorized manual trigger

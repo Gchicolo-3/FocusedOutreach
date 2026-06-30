@@ -41,3 +41,6 @@ input::placeholder, textarea::placeholder { color: #555550; }
   to   { opacity: 1; transform: translateY(0); }
 }
 .fade-up { animation: fadeUp 0.3s ease both; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 0.7s linear infinite; }
