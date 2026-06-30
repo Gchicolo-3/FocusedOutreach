@@ -3,10 +3,10 @@
 import { useState, useEffect } from 'react';
 import { Partner, PartnerType, RelationshipTier } from '@/types';
 import { getPartners, setPartners, updatePartner, logPartnerTouch } from '@/lib/storage';
-import { getPartnerNurtureText, getPartnerNurtureEmail, getPartnerLinkedIn } from '@/lib/messages';
+import { getPartnerNurtureEmail, getPartnerLinkedIn } from '@/lib/messages';
 import { computeStatus, defaultTierForPartner } from '@/lib/cadence';
 import { C, F, labelMono, btnPrimary, btnSecondary, btnGhost, pillStyle, inputBase } from '@/lib/design';
-import MessageCard from '@/components/MessageCard';
+import InlineCompose from '@/components/InlineCompose';
 
 const tierPill: Record<RelationshipTier, 'purple' | 'teal' | 'amber'> = { A: 'purple', B: 'teal', C: 'amber' };
 const statusPill: Record<string, { label: string; variant: 'red' | 'amber' | 'accent' }> = {
@@ -285,18 +285,18 @@ export default function ReferralPartners() {
                       {copied === `${partner.id}-li` ? 'Copied' : 'Copy LinkedIn template'}
                     </button>
                   </div>
-                  <MessageCard
+                  <InlineCompose
+                    contactId={partner.id}
                     contactName={`${partner.firstName} ${partner.lastName}`}
                     company={partner.company}
                     email={partner.email}
-                    phone={partner.phone}
-                    channel="text"
-                    initialMessage={getPartnerNurtureText(partner)}
+                    contactType="partner"
                     intel={
                       partner.notes ||
                       `${partner.partnerType} referral partner at ${partner.company}. ${partner.referralCount} referrals given.`
                     }
                     lastTouch={partner.lastTouch}
+                    onLogged={refresh}
                   />
                   <div style={{ ...labelMono, marginBottom: 8, marginTop: 16 }}>Notes</div>
                   <textarea
