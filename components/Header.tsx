@@ -11,6 +11,15 @@ import {
 } from '@/lib/storage';
 import { C, F, labelMono } from '@/lib/design';
 
+// Formats a stored date string, returning '' for missing/invalid values so the
+// header never renders the literal "Invalid Date".
+function formatStoredDate(value: string | null): string {
+  if (!value) return '';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString();
+}
+
 function LiveClock() {
   const [time, setTime] = useState('');
   useEffect(() => {
@@ -117,16 +126,16 @@ export default function Header({ onImport, refreshKey }: { onImport: () => void;
             </div>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            {(lastImport || lastActivity) && (
+            {(formatStoredDate(lastImport) || formatStoredDate(lastActivity)) && (
               <div className="flex flex-col items-end text-right">
-                {lastImport && (
+                {formatStoredDate(lastImport) && (
                   <span style={{ ...labelMono, color: C.muted2 }}>
-                    Contacts {new Date(lastImport).toLocaleDateString()}
+                    Contacts {formatStoredDate(lastImport)}
                   </span>
                 )}
-                {lastActivity && (
+                {formatStoredDate(lastActivity) && (
                   <span style={{ ...labelMono, color: C.muted2 }}>
-                    Activities {new Date(lastActivity).toLocaleDateString()}
+                    Activities {formatStoredDate(lastActivity)}
                   </span>
                 )}
               </div>

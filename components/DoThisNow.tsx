@@ -13,6 +13,8 @@ import {
   snoozeLead,
   initDefaultBrokers,
   initDefaultColdBrokers,
+  getLastLoadError,
+  clearLoadError,
 } from '@/lib/storage';
 import { selectDaily5 } from '@/lib/prioritize';
 import { C, F, labelMono, btnSecondary, btnGhost, pillStyle } from '@/lib/design';
@@ -54,6 +56,7 @@ export default function DoThisNow() {
   const [tasks, setTasks] = useState<DailyTask[]>([]);
   const [doneIds, setDoneIds] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -65,18 +68,26 @@ export default function DoThisNow() {
 
   async function loadTasks() {
     const today = new Date().toISOString().split('T')[0];
-    const [doneAll, snoozedAll, prospects, brokers, partners, coldBrokers] = await Promise.all([
-      getDone(),
-      getSnoozed(),
-      getProspects(),
-      getBrokers(),
-      getPartners(),
-      getColdBrokers(),
-    ]);
-    const done = doneAll.filter((d) => d.date === today).map((d) => d.id);
-    const snoozed = snoozedAll.filter((s) => s.until > today).map((s) => s.id);
-    setDoneIds(new Set(done));
-    setTasks(selectDaily5(prospects, brokers, partners, coldBrokers, new Set(done), new Set(snoozed)));
+    clearLoadError();
+    try {
+      const [doneAll, snoozedAll, prospects, brokers, partners, coldBrokers] = await Promise.all([
+        getDone(),
+        getSnoozed(),
+        getProspects(),
+        getBrokers(),
+        getPartners(),
+        getColdBrokers(),
+      ]);
+      const done = doneAll.filter((d) => d.date === today).map((d) => d.id);
+      const snoozed = snoozedAll.filter((s) => s.until > today).map((s) => s.id);
+      setDoneIds(new Set(done));
+      setTasks(selectDaily5(prospects, brokers, partners, coldBrokers, new Set(done), new Set(snoozed)));
+      // Surface a silently-swallowed Supabase read failure (e.g. the queue is
+      // empty because contacts failed to load, not because there's no work).
+      setLoadError(getLastLoadError());
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : 'Failed to load contacts');
+    }
   }
 
   async function handleDone(id: string) {
@@ -94,6 +105,23 @@ export default function DoThisNow() {
 
   return (
     <div className="flex flex-col gap-4">
+      {loadError && (
+        <div
+          className="fade-up"
+          style={{
+            background: C.redBg,
+            border: `1px solid ${C.red}`,
+            borderRadius: 12,
+            padding: '12px 16px',
+            color: C.red,
+            fontSize: 13,
+            lineHeight: 1.5,
+          }}
+        >
+          Couldn&apos;t load contacts: {loadError}. Check your connection and refresh — the
+          queue can&apos;t populate until contacts load.
+        </div>
+      )}
       <div
         style={{
           background: C.surface,
