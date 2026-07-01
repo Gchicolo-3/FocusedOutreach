@@ -214,6 +214,22 @@ export async function getPendingDrafts() {
   return data || [];
 }
 
+// Contacts that already have a pending (unreviewed) draft. Used to avoid
+// drafting the same person again on every run, which otherwise stacks up
+// thousands of duplicate drafts.
+export async function getPendingDraftContactIds(): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('drafts')
+    .select('contact_id')
+    .eq('status', 'pending');
+
+  if (error) {
+    console.error('getPendingDraftContactIds:', error.message);
+    return new Set();
+  }
+  return new Set((data || []).map((r) => r.contact_id).filter(Boolean));
+}
+
 export async function updateDraftStatus(
   id: string,
   status: 'approved' | 'edited' | 'killed' | 'sent',

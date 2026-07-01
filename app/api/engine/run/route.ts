@@ -10,10 +10,16 @@ import { runQualifier } from '@/lib/engine/qualifier';
 import { runCadenceManager } from '@/lib/engine/cadence-manager';
 import { runCopywriter } from '@/lib/engine/copywriter';
 import { sendMorningDigest } from '@/lib/engine/digest';
-import { logAgentRun } from '@/lib/engine/db';
+import { logAgentRun, getPendingDraftContactIds } from '@/lib/engine/db';
 
 export const maxDuration = 300; // 5 min max for Vercel Pro, 60s for hobby
 export const dynamic = 'force-dynamic'; // request-time only; never prerender
+
+// Cap drafts per run so the pipeline always completes within the function
+// time limit (a full ~600-contact batch cannot finish in 300s and gets killed
+// before the digest sends). Most-overdue contacts are drafted first; the rest
+// roll to the next run.
+const MAX_DRAFTS_PER_RUN = 40;
 
 export async function GET(request: Request) {
   // Verify this is coming from Vercel cron or an authorized manual trigger
@@ -52,12 +58,31 @@ export async function GET(request: Request) {
     const dueTouches = await runCadenceManager();
     summary.contactsFlagged = dueTouches.length;
 
-    // Step 4: Copywriter - draft everything
+    // Step 4: Copywriter - draft the highest-priority items.
+    // Dedup: skip any contact that already has a pending (unreviewed) draft,
+    // and guard against the same contact appearing twice in one batch. Then
+    // cap the total so the run finishes within the function time limit.
     console.log('[Engine] Running Copywriter...');
-    const allItems = [
-      ...qualified.actionable.map((s: any) => ({ type: 'signal', data: s })),
-      ...dueTouches.map((c: any) => ({ type: 'cadence', data: c }))
+    const pendingContactIds = await getPendingDraftContactIds();
+    const seen = new Set<string>();
+    const keep = (id?: string): boolean => {
+      if (!id) return true; // no-contact drafts (cold) can't be deduped
+      if (pendingContactIds.has(id) || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    };
+
+    const candidates = [
+      ...qualified.actionable.map((s: any) => ({ type: 'signal', data: s, id: s.contact_id })),
+      // dueTouches is already sorted most-overdue-first by the cadence manager
+      ...dueTouches.map((c: any) => ({ type: 'cadence', data: c, id: c.id })),
     ];
+    const allItems = candidates
+      .filter((x) => keep(x.id))
+      .slice(0, MAX_DRAFTS_PER_RUN)
+      .map(({ type, data }) => ({ type, data }));
+
+    console.log(`[Engine] Drafting ${allItems.length} of ${candidates.length} candidates (capped at ${MAX_DRAFTS_PER_RUN})`);
     const drafts = await runCopywriter(allItems);
     summary.draftsCreated = drafts.length;
 
