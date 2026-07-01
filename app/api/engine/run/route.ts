@@ -10,7 +10,7 @@ import { runQualifier } from '@/lib/engine/qualifier';
 import { runCadenceManager } from '@/lib/engine/cadence-manager';
 import { runCopywriter } from '@/lib/engine/copywriter';
 import { sendMorningDigest } from '@/lib/engine/digest';
-import { logAgentRun, getPendingDraftContactIds } from '@/lib/engine/db';
+import { logAgentRun, getPendingDraftKeys, normalizeContactName } from '@/lib/engine/db';
 
 export const maxDuration = 300; // 5 min max for Vercel Pro, 60s for hobby
 export const dynamic = 'force-dynamic'; // request-time only; never prerender
@@ -60,25 +60,40 @@ export async function GET(request: Request) {
 
     // Step 4: Copywriter - draft the highest-priority items.
     // Dedup: skip any contact that already has a pending (unreviewed) draft,
-    // and guard against the same contact appearing twice in one batch. Then
+    // keyed by BOTH contact id and normalized name (the same person can exist
+    // under different ids, e.g. a row in brokers and another in partners).
+    // Also guard against the same person appearing twice in one batch. Then
     // cap the total so the run finishes within the function time limit.
     console.log('[Engine] Running Copywriter...');
-    const pendingContactIds = await getPendingDraftContactIds();
+    const pendingKeys = await getPendingDraftKeys();
     const seen = new Set<string>();
-    const keep = (id?: string): boolean => {
-      if (!id) return true; // no-contact drafts (cold) can't be deduped
-      if (pendingContactIds.has(id) || seen.has(id)) return false;
-      seen.add(id);
+    const keep = (keys: string[]): boolean => {
+      const valid = keys.filter(Boolean);
+      if (valid.length === 0) return true; // no identity at all; can't dedup
+      if (valid.some((k) => pendingKeys.has(k) || seen.has(k))) return false;
+      valid.forEach((k) => seen.add(k));
       return true;
+    };
+    const nameKey = (name?: string): string => {
+      const n = normalizeContactName(name);
+      return n ? `name:${n}` : '';
     };
 
     const candidates = [
-      ...qualified.actionable.map((s: any) => ({ type: 'signal', data: s, id: s.contact_id })),
+      ...qualified.actionable.map((s: any) => ({
+        type: 'signal',
+        data: s,
+        keys: [s.contact_id, nameKey(s.contact_name)],
+      })),
       // dueTouches is already sorted most-overdue-first by the cadence manager
-      ...dueTouches.map((c: any) => ({ type: 'cadence', data: c, id: c.id })),
+      ...dueTouches.map((c: any) => ({
+        type: 'cadence',
+        data: c,
+        keys: [c.id, nameKey(`${c.first_name} ${c.last_name}`)],
+      })),
     ];
     const allItems = candidates
-      .filter((x) => keep(x.id))
+      .filter((x) => keep(x.keys))
       .slice(0, MAX_DRAFTS_PER_RUN)
       .map(({ type, data }) => ({ type, data }));
 
