@@ -2,6 +2,9 @@ import Anthropic from '@anthropic-ai/sdk';
 import { NextRequest, NextResponse } from 'next/server';
 import { GEORGE_TONE_PROFILE } from '@/lib/toneProfile';
 
+export const dynamic = 'force-dynamic';
+export const maxDuration = 30; // fast model returns in a few seconds
+
 type Channel = 'text' | 'email' | 'linkedin' | 'call';
 
 type GenerateRequest = {
@@ -65,10 +68,12 @@ export async function POST(req: NextRequest) {
   const client = new Anthropic();
 
   try {
+    // Fast, non-thinking model: short outreach messages don't need extended
+    // thinking, and Opus + adaptive thinking was taking well over a minute and
+    // timing out the request. Matches the model the engine copywriter uses.
     const response = await client.messages.create({
-      model: 'claude-opus-4-7',
+      model: 'claude-sonnet-4-6',
       max_tokens: 1024,
-      thinking: { type: 'adaptive' },
       system: GEORGE_TONE_PROFILE,
       messages: [{ role: 'user', content: prompt }],
     });

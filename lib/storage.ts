@@ -9,10 +9,25 @@ export type { ActivityRecord } from './parseCSV';
 import type { ActivityRecord } from './parseCSV';
 import { normalizeContactKey } from './parseCSV';
 
+// Records the last data-load failure so the UI can surface a real error instead
+// of silently rendering an empty dashboard when a Supabase read fails.
+let lastLoadError: string | null = null;
+export function getLastLoadError(): string | null {
+  return lastLoadError;
+}
+export function clearLoadError(): void {
+  lastLoadError = null;
+}
+function noteLoadError(where: string, error: unknown): void {
+  const msg = (error as { message?: string })?.message || String(error);
+  lastLoadError = `${where}: ${msg}`;
+  console.error(where, error);
+}
+
 // ============ PROSPECTS ============
 export async function getProspects(): Promise<Lead[]> {
   const { data, error } = await supabase.from('prospects').select('*');
-  if (error) { console.error(error); return []; }
+  if (error) { noteLoadError('getProspects', error); return []; }
   return (data || []).map(r => ({
     id: r.id, company: r.company, contact: r.contact,
     subject: r.subject, activityType: r.activity_type, date: r.date,
@@ -41,7 +56,7 @@ export async function setProspects(leads: Lead[]): Promise<void> {
 // ============ BROKERS ============
 export async function getBrokers(): Promise<Broker[]> {
   const { data, error } = await supabase.from('brokers').select('*');
-  if (error) { console.error(error); return []; }
+  if (error) { noteLoadError('getBrokers', error); return []; }
   return (data || []).map(r => ({
     id: r.id, firstName: r.first_name, lastName: r.last_name,
     firm: r.firm, title: r.title, email: r.email, phone: r.phone,
@@ -96,7 +111,7 @@ export async function logBrokerTouch(id: string): Promise<void> {
 // ============ PARTNERS ============
 export async function getPartners(): Promise<Partner[]> {
   const { data, error } = await supabase.from('partners').select('*');
-  if (error) { console.error(error); return []; }
+  if (error) { noteLoadError('getPartners', error); return []; }
   return (data || []).map(r => ({
     id: r.id, firstName: r.first_name, lastName: r.last_name,
     company: r.company, title: r.title, partnerType: r.partner_type,
@@ -145,7 +160,7 @@ export async function logPartnerTouch(id: string): Promise<void> {
 // ============ COLD BROKERS ============
 export async function getColdBrokers(): Promise<ColdBroker[]> {
   const { data, error } = await supabase.from('cold_brokers').select('*');
-  if (error) { console.error(error); return []; }
+  if (error) { noteLoadError('getColdBrokers', error); return []; }
   return data || [];
 }
 
