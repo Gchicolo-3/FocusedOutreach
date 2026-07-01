@@ -23,7 +23,7 @@ ALWAYS:
 NEVER use these words or phrases:
 - Em dashes, hyphens in compound modifiers
 - "Hope this email finds you well"
-- "Just circling back" / "checking in" / "touching base"  
+- "Just circling back" / "checking in" / "touching base"
 - "I came across your profile"
 - "Excited to connect" / "looking forward to connecting"
 - "No agenda" / "no pressure"
@@ -33,6 +33,10 @@ NEVER use these words or phrases:
 - Bullet points in emails
 - Bold formatting
 - Double asks in one message
+- "It's been a while" / "Been a while" / "Been a minute" as an opener — these
+  are banned. Do not open by pointing out how long it has been. Get straight
+  to something useful or specific instead. If an opener direction is given in
+  the prompt, follow it.
 
 THE GOLD STANDARD (match this energy):
 "Hey Slava, been a while. Something that might actually be useful: when your clients are weighing spaces, we can run test fits and review the landlord work letter before they sign, so they know what the space can really do and what it'll cost to get there. Catches problems early and gets them to a decision faster. Worth a coffee to show you how we work.
@@ -74,6 +78,25 @@ async function callClaude(prompt: string, attempt = 0): Promise<string> {
   if (!res.ok) throw new Error(`Claude API error: ${res.status}`);
   const data = await res.json();
   return data.content?.[0]?.text || 'SKIP: no response from Claude';
+}
+
+// Rotated per contact so a batch of cadence drafts doesn't converge on one
+// opening line. Deterministic (hash of contact id) so re-drafting the same
+// person stays consistent. Angles must not require facts we don't have.
+const OPENER_ANGLES = [
+  'Open with something useful you can offer right now: test fits, landlord work letter review, or a quick budget reality check.',
+  'Open with a direct, friendly question about what they are working on or seeing in the market right now.',
+  'Open by referencing the kind of deals or clients their firm handles and how you help those deals move faster.',
+  'Open with a specific offer to jump in on anything in their current pipeline where a tenant is unsure about a space.',
+  'Open with a short, concrete statement about what Focus Studio has been helping brokers with lately (keep it general, do not invent fake project details).',
+  'Open warm and personal, like texting someone you know, and get to the point in the first sentence.',
+];
+
+function openerAngleFor(contactId?: string): string {
+  const id = contactId || '';
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return OPENER_ANGLES[hash % OPENER_ANGLES.length];
 }
 
 function buildPrompt(item: { type: string; data: any }): {
@@ -139,8 +162,8 @@ Days since due: ${daysOverdue}
 ${contact.notes ? `Notes on this person: ${contact.notes}` : ''}
 
 This is a scheduled cadence touch. No specific signal. Keep it natural and brief.
+Opener direction: ${openerAngleFor(contact.id)} Do not comment on how long it has been since you last spoke.
 ${contact.tier === 'A' ? 'This is an A-tier relationship. Tone should feel like a text from someone they know.' : ''}
-${daysOverdue > 30 ? 'They have been out of touch for a while. Acknowledge the gap without apologizing for it.' : ''}
 
 Channel: ${channel}`;
 

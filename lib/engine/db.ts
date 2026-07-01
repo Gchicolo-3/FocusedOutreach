@@ -214,20 +214,34 @@ export async function getPendingDrafts() {
   return data || [];
 }
 
-// Contacts that already have a pending (unreviewed) draft. Used to avoid
-// drafting the same person again on every run, which otherwise stacks up
-// thousands of duplicate drafts.
-export async function getPendingDraftContactIds(): Promise<Set<string>> {
+// Lowercased alphanumeric form of a contact name, so "Peter Shikar",
+// "peter shikar" and "Peter  Shikar" all dedupe to the same key.
+export function normalizeContactName(name?: string | null): string {
+  return (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// Dedup keys (contact ids AND normalized names) for contacts that already
+// have a pending (unreviewed) draft. Name keys catch the same person existing
+// under different ids (e.g. a row in both brokers and partners), which
+// id-only dedup missed.
+export async function getPendingDraftKeys(): Promise<Set<string>> {
   const { data, error } = await supabase
     .from('drafts')
-    .select('contact_id')
+    .select('contact_id, contact_name')
     .eq('status', 'pending');
 
   if (error) {
-    console.error('getPendingDraftContactIds:', error.message);
+    console.error('getPendingDraftKeys:', error.message);
     return new Set();
   }
-  return new Set((data || []).map((r) => r.contact_id).filter(Boolean));
+
+  const keys = new Set<string>();
+  for (const r of data || []) {
+    if (r.contact_id) keys.add(String(r.contact_id));
+    const nameKey = normalizeContactName(r.contact_name);
+    if (nameKey) keys.add(`name:${nameKey}`);
+  }
+  return keys;
 }
 
 export async function updateDraftStatus(
