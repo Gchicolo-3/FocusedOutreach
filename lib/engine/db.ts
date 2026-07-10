@@ -33,6 +33,32 @@ const supabase = new Proxy({} as SupabaseClient, {
 // CONTACTS - reads from existing tables
 // ============================================================
 
+// The contact tables store dates as TEXT in mixed formats ("2026-06-16" and
+// "6/23/2026"). Comparing those strings directly is only correct for ISO
+// values — "6/23/2026" <= "2026-07-10" is false forever, which silently hid
+// every M/D/YYYY contact from the cadence. Normalize before comparing.
+// Returns null for missing/unparseable values.
+export function toIsoDate(value?: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed.slice(0, 10);
+  const mdy = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (mdy) {
+    return `${mdy[3]}-${mdy[1].padStart(2, '0')}-${mdy[2].padStart(2, '0')}`;
+  }
+  const parsed = new Date(trimmed);
+  return isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+}
+
+// Due when next_due is missing (never scheduled), unparseable (bad data
+// should surface for a human, not hide), or on/before today.
+function isDue(nextDue: string | null | undefined, today: string): boolean {
+  if (!nextDue) return true;
+  const iso = toIsoDate(nextDue);
+  if (!iso) return true;
+  return iso <= today;
+}
+
 export async function getBrokersDueForTouch() {
   const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 
@@ -44,14 +70,9 @@ export async function getBrokersDueForTouch() {
     .order('tier', { ascending: true });
 
   if (error) throw new Error(`getBrokersDueForTouch: ${error.message}`);
-  
-  // Filter in JS since next_due is stored as text
-  const due = (data || []).filter(b => {
-    if (!b.next_due) return true; // never touched, always due
-    return b.next_due <= today;
-  });
 
-  return due;
+  // Filter in JS since next_due is stored as text
+  return (data || []).filter(b => isDue(b.next_due, today));
 }
 
 export async function getPartnersDueForTouch() {
@@ -65,12 +86,7 @@ export async function getPartnersDueForTouch() {
 
   if (error) throw new Error(`getPartnersDueForTouch: ${error.message}`);
 
-  const due = (data || []).filter(p => {
-    if (!p.next_due) return true;
-    return p.next_due <= today;
-  });
-
-  return due;
+  return (data || []).filter(p => isDue(p.next_due, today));
 }
 
 export async function getBrokerById(id: string) {
