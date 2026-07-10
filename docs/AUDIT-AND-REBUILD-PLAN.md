@@ -305,6 +305,17 @@ auto-queued the day after.
 
 ### Phase 0 — Stop the bleeding (Week 1) — no new infra
 
+> **STATUS 2026-07-10: Phase 0 complete.** All items below shipped on this
+> branch: B1 (`6d11e47`), B2 (`be56945`), B5 (`79377a6`), B3 (`257d433`),
+> B4 (`47f08b6`, migration applied to the live DB), Perplexity removal
+> (`e8500bd`), opener anti-repetition v2 (`30fe97e`), dead code (`85bf029`),
+> qualification gate + classify endpoint (`5e70bd6`, schema applied live).
+> One manual step remains: after deploy, run the classification backfill —
+> `curl -X POST $APP_URL/api/engine/classify -H "authorization: Bearer $CRON_SECRET"`
+> (repeat until `results.*.classified` returns 0), then review contacts
+> where `qualified IS NULL AND persona IS NOT NULL` (the low-confidence
+> calls). Next up: Phase 1.
+
 - **Fix B1 (signal mis-attribution):** require an exact-domain or
   high-confidence name match before attaching a signal to a broker; otherwise
   leave `contact_id` null and treat as cold. Small change in
