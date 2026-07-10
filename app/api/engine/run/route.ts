@@ -5,8 +5,6 @@
 // Also callable manually via GET /api/engine/run
 
 import { NextResponse } from 'next/server';
-import { runSignalScout } from '@/lib/engine/signal-scout';
-import { runQualifier } from '@/lib/engine/qualifier';
 import { runCadenceManager } from '@/lib/engine/cadence-manager';
 import { runCopywriter } from '@/lib/engine/copywriter';
 import { sendMorningDigest } from '@/lib/engine/digest';
@@ -40,15 +38,12 @@ export async function GET(request: Request) {
   };
 
   try {
-    // Step 1: Signal Scout - find reasons to reach out
-    console.log('[Engine] Running Signal Scout...');
-    const signals = await runSignalScout();
-    summary.signalsFound = signals.length;
-
-    // Step 2: Qualifier - score and route signals
-    console.log('[Engine] Running Qualifier...');
-    const qualified = await runQualifier(signals);
-    summary.signalsQualified = qualified.actionable.length;
+    // Steps 1-2 (signal discovery + qualification) are intentionally empty.
+    // The Perplexity signal scout returned nothing usable and burned run time,
+    // so it was removed; the Phase-2 RSS/news ingester re-enters the pipeline
+    // here by producing signals and passing them through runQualifier
+    // (lib/engine/qualifier.ts, kept for that purpose).
+    const qualified = { actionable: [] as any[], watchlist: [] as any[] };
 
     // Step 3: Cadence Manager - find contacts due for a touch
     console.log('[Engine] Running Cadence Manager...');
