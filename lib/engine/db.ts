@@ -82,15 +82,56 @@ export async function getBrokerById(id: string) {
   return data;
 }
 
-export async function findBrokerByFirmOrName(name: string, firm?: string) {
-  let query = supabase.from('brokers').select('*');
-  if (firm) {
-    query = query.ilike('firm', `%${firm}%`);
-  } else {
-    query = query.or(`first_name.ilike.%${name}%,last_name.ilike.%${name}%`);
+// Lowercased alphanumeric-and-spaces form of free text, for name-in-summary
+// matching. Collapses whitespace so "J.  Smith" and "j smith" compare equal.
+export function normalizeText(text?: string | null): string {
+  return (text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+// True when the summary text actually names this person. This is the
+// confidence gate for attaching a signal to a broker: a firm-name match alone
+// is not enough to know WHICH person at the firm the news is about.
+export function summaryMentionsName(
+  summary: string,
+  firstName?: string | null,
+  lastName?: string | null
+): boolean {
+  const first = normalizeText(firstName);
+  const last = normalizeText(lastName);
+  if (!first || !last) return false;
+  const haystack = ` ${normalizeText(summary)} `;
+  return haystack.includes(` ${first} ${last} `);
+}
+
+// Match a signal to a broker only when we're confident it's about that
+// specific person: the company must resemble their firm AND the summary must
+// name them. Anything less returns null and the signal stays unattached —
+// a missed match costs a warm angle; a false match drafts a message to the
+// wrong human about someone else's deal.
+export async function findBrokerForSignal(companyName: string, summary: string) {
+  const company = normalizeText(companyName);
+  if (company.length < 3 || !summary) return null;
+
+  // ilike is substring-only, so candidates are broad; the name gate below is
+  // what makes the final match safe. Strip ilike wildcards from the input.
+  const pattern = `%${companyName.replace(/[%_]/g, ' ').trim()}%`;
+  const { data, error } = await supabase
+    .from('brokers')
+    .select('*')
+    .ilike('firm', pattern)
+    .limit(50);
+
+  if (error) {
+    console.error('findBrokerForSignal:', error.message);
+    return null;
   }
-  const { data } = await query.limit(1);
-  return data?.[0] || null;
+
+  return (
+    (data || []).find((b) => summaryMentionsName(summary, b.first_name, b.last_name)) || null
+  );
 }
 
 export async function getRecentActivity(contactId: string) {
