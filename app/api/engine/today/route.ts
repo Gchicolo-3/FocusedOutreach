@@ -4,18 +4,25 @@
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { isEngineRequestAuthorized } from '@/lib/engine/auth';
 
 // Reads live data from Supabase on every request — never prerender at build time.
 export const dynamic = 'force-dynamic';
 
+// Service role key so this keeps working once RLS locks these tables down;
+// anon fallback preserves dev setups without the service key.
 function getSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  if (!isEngineRequestAuthorized(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const supabase = getSupabase();
   const today = new Date().toISOString().split('T')[0];
 

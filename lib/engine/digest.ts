@@ -42,14 +42,32 @@ function contextLine(contact: { notes?: string }): string {
   return raw.length > 110 ? `${raw.slice(0, 110).trimEnd()}...` : raw;
 }
 
+// Digest ranking: overdue-days weighted by relationship tier, so a slightly
+// overdue A-tier broker outranks a long-dead C-tier contact (raw overdue-days
+// alone put the deadest relationships on top every day). Overdue-ness is
+// capped: past a month, extra cold adds no urgency. Within the cap, a tier
+// needs ~3x the overdue-days to outrank the tier above it.
+const TIER_WEIGHTS: Record<string, number> = { A: 9, B: 3, C: 1 };
+const OVERDUE_CAP_DAYS = 30;
+
+export function touchPriority(contact: { tier?: string; days_overdue?: number }): number {
+  const weight = TIER_WEIGHTS[contact.tier ?? ''] ?? 1;
+  // days_overdue is NaN for never-touched contacts (no next_due on record);
+  // treat those as just-due rather than infinitely overdue.
+  const days = Number.isFinite(contact.days_overdue) ? Math.max(contact.days_overdue!, 0) : 0;
+  return weight * (Math.min(days, OVERDUE_CAP_DAYS) + 1);
+}
+
+export function rankTouches<T extends { tier?: string; days_overdue?: number }>(touches: T[]): T[] {
+  return [...touches].sort((a, b) => touchPriority(b) - touchPriority(a));
+}
+
 export function buildEmailHtml(data: { dueTouches: any[]; summary: any }) {
   const today = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric'
   });
 
-  const top5 = [...data.dueTouches]
-    .sort((a, b) => (b.days_overdue || 0) - (a.days_overdue || 0))
-    .slice(0, 5);
+  const top5 = rankTouches(data.dueTouches).slice(0, 5);
 
   const rows = top5.length
     ? top5.map((c) => {

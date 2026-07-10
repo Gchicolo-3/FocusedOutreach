@@ -1,22 +1,31 @@
 // app/api/engine/drafts/route.ts
-// Returns pending drafts for the dashboard
-// Dashboard polls this to show George what needs review
+// Returns pending drafts and records approve/edit/kill decisions.
+// Requires the engine Bearer secret: drafts carry contact PII and PATCH
+// mutates review state. Dashboard access must go through a server-side
+// proxy that injects the secret (see app/api/engine/trigger/route.ts).
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { isEngineRequestAuthorized } from '@/lib/engine/auth';
 
 // Reads/writes live Supabase data on every request — never prerender at build time.
 export const dynamic = 'force-dynamic';
 
+// Service role key so this keeps working once RLS locks the drafts table
+// down; anon fallback preserves dev setups without the service key.
 function getSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 }
 
 // GET /api/engine/drafts - fetch pending drafts
-export async function GET() {
+export async function GET(request: Request) {
+  if (!isEngineRequestAuthorized(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const supabase = getSupabase();
   const { data, error } = await supabase
     .from('drafts')
@@ -33,6 +42,10 @@ export async function GET() {
 
 // PATCH /api/engine/drafts - approve, edit, or kill a draft
 export async function PATCH(request: Request) {
+  if (!isEngineRequestAuthorized(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const supabase = getSupabase();
   const body = await request.json();
   const { id, status, edited_body } = body;

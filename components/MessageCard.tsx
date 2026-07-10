@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { generateMessage, GenerateChannel } from '@/lib/toneProfile';
-import { openInMessages, openInOutlook } from '@/lib/sendActions';
+import { openInMessages, composeInOutlook } from '@/lib/sendActions';
 import { C, F, labelMono, inputBase } from '@/lib/design';
 
 type MessageCardProps = {
@@ -108,7 +108,7 @@ export default function MessageCard({
       setError('No email on file');
       return;
     }
-    openInOutlook(email, msgSubject || `Focus Studio — ${firstName}`, message);
+    void composeInOutlook(email, msgSubject || `Focus Studio — ${firstName}`, message);
   }
 
   const actionBtn = (opts: {

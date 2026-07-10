@@ -5,12 +5,11 @@
 // Also callable manually via GET /api/engine/run
 
 import { NextResponse } from 'next/server';
-import { runSignalScout } from '@/lib/engine/signal-scout';
-import { runQualifier } from '@/lib/engine/qualifier';
 import { runCadenceManager } from '@/lib/engine/cadence-manager';
 import { runCopywriter } from '@/lib/engine/copywriter';
 import { sendMorningDigest } from '@/lib/engine/digest';
 import { logAgentRun, getPendingDraftKeys, normalizeContactName } from '@/lib/engine/db';
+import { isEngineRequestAuthorized } from '@/lib/engine/auth';
 
 export const maxDuration = 300; // 5 min max for Vercel Pro, 60s for hobby
 export const dynamic = 'force-dynamic'; // request-time only; never prerender
@@ -23,11 +22,7 @@ const MAX_DRAFTS_PER_RUN = 40;
 
 export async function GET(request: Request) {
   // Verify this is coming from Vercel cron or an authorized manual trigger
-  const authHeader = request.headers.get('authorization');
-  if (
-    process.env.NODE_ENV === 'production' &&
-    authHeader !== `Bearer ${process.env.CRON_SECRET}`
-  ) {
+  if (!isEngineRequestAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -43,15 +38,12 @@ export async function GET(request: Request) {
   };
 
   try {
-    // Step 1: Signal Scout - find reasons to reach out
-    console.log('[Engine] Running Signal Scout...');
-    const signals = await runSignalScout();
-    summary.signalsFound = signals.length;
-
-    // Step 2: Qualifier - score and route signals
-    console.log('[Engine] Running Qualifier...');
-    const qualified = await runQualifier(signals);
-    summary.signalsQualified = qualified.actionable.length;
+    // Steps 1-2 (signal discovery + qualification) are intentionally empty.
+    // The Perplexity signal scout returned nothing usable and burned run time,
+    // so it was removed; the Phase-2 RSS/news ingester re-enters the pipeline
+    // here by producing signals and passing them through runQualifier
+    // (lib/engine/qualifier.ts, kept for that purpose).
+    const qualified = { actionable: [] as any[], watchlist: [] as any[] };
 
     // Step 3: Cadence Manager - find contacts due for a touch
     console.log('[Engine] Running Cadence Manager...');
