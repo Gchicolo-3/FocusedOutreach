@@ -10,6 +10,7 @@ import TextLauncher from '@/components/TextLauncher';
 import SequencesTab from '@/components/Sequences';
 import NewContacts from '@/components/NewContacts';
 import RunEngineButton from '@/components/RunEngineButton';
+import RunClassifierButton from '@/components/RunClassifierButton';
 import { C } from '@/lib/design';
 
 export default function Home() {
@@ -32,8 +33,12 @@ export default function Home() {
       <Header onImport={handleImport} refreshKey={refreshKey} />
       <TabNav active={tab} onChange={setTab} />
       <main style={{ maxWidth: 900, margin: '0 auto', padding: '24px 20px 48px' }}>
-        <div style={{ marginBottom: 24 }}>
+        <div
+          style={{ marginBottom: 24 }}
+          className="flex gap-6 flex-wrap items-start"
+        >
           <RunEngineButton onComplete={handleImport} />
+          <RunClassifierButton onComplete={handleImport} />
         </div>
         {tab === 'do-this-now' && <DoThisNow key={refreshKey} />}
         {tab === 'broker-engine' && <BrokerEngine key={refreshKey} />}
