@@ -67,6 +67,10 @@ export async function getBrokersDueForTouch() {
     .select('*')
     .neq('tier', 'D')
     .neq('status', 'inactive')
+    // Qualification gate: only explicit qualified=false is excluded.
+    // NULL (unclassified or low-confidence) still flows through — a .neq
+    // filter would silently drop NULL rows too.
+    .or('qualified.is.null,qualified.eq.true')
     .order('tier', { ascending: true });
 
   if (error) throw new Error(`getBrokersDueForTouch: ${error.message}`);
@@ -82,6 +86,7 @@ export async function getPartnersDueForTouch() {
     .from('partners')
     .select('*')
     .neq('tier', 'D')
+    .or('qualified.is.null,qualified.eq.true')
     .order('tier', { ascending: true });
 
   if (error) throw new Error(`getPartnersDueForTouch: ${error.message}`);
