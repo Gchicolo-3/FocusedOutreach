@@ -134,31 +134,43 @@ export async function findBrokerForSignal(companyName: string, summary: string) 
   );
 }
 
-export async function getRecentActivity(contactId: string) {
+// Batch lookups for the cadence manager's crossing-over checks. The previous
+// per-contact versions ran two awaited queries inside the contact loop
+// (hundreds of round-trips per run) and were a large share of why runs hit
+// Vercel's function time limit.
+
+// Map of contact_id -> most recent touch date within the last 30 days.
+export async function getRecentlyTouchedContacts(): Promise<Map<string, string>> {
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const cutoff = thirtyDaysAgo.toISOString().split('T')[0];
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('touch_log')
-    .select('*')
-    .eq('contact_id', contactId)
-    .gte('date', cutoff)
-    .order('date', { ascending: false })
-    .limit(1);
+    .select('contact_id, date')
+    .gte('date', cutoff);
 
-  return data?.[0] || null;
+  if (error) throw new Error(`getRecentlyTouchedContacts: ${error.message}`);
+
+  const touched = new Map<string, string>();
+  for (const row of data || []) {
+    if (!row.contact_id) continue;
+    const prev = touched.get(row.contact_id);
+    if (!prev || row.date > prev) touched.set(row.contact_id, row.date);
+  }
+  return touched;
 }
 
-export async function hasOpenTask(contactId: string) {
-  const { data } = await supabase
+// Contact ids that currently have a pending activity/task.
+export async function getOpenTaskContactIds(): Promise<Set<string>> {
+  const { data, error } = await supabase
     .from('activities')
-    .select('id')
-    .eq('contact_id', contactId)
-    .eq('status', 'pending')
-    .limit(1);
+    .select('contact_id')
+    .eq('status', 'pending');
 
-  return (data?.length || 0) > 0;
+  if (error) throw new Error(`getOpenTaskContactIds: ${error.message}`);
+
+  return new Set((data || []).map((r) => r.contact_id).filter(Boolean));
 }
 
 // ============================================================
