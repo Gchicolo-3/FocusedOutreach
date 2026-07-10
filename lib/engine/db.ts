@@ -313,6 +313,39 @@ export async function getPendingDraftKeys(): Promise<Set<string>> {
   return keys;
 }
 
+// Most recent draft bodies per contact (any status), for opener-repetition
+// avoidance in the copywriter. One batched query for the whole run.
+export async function getRecentDraftBodiesForContacts(
+  contactIds: string[],
+  perContact = 3
+): Promise<Map<string, string[]>> {
+  const ids = contactIds.filter(Boolean);
+  const result = new Map<string, string[]>();
+  if (!ids.length) return result;
+
+  const { data, error } = await supabase
+    .from('drafts')
+    .select('contact_id, body, created_at')
+    .in('contact_id', ids)
+    .order('created_at', { ascending: false })
+    .limit(ids.length * perContact * 2);
+
+  if (error) {
+    console.error('getRecentDraftBodiesForContacts:', error.message);
+    return result;
+  }
+
+  for (const row of data || []) {
+    if (!row.contact_id || !row.body) continue;
+    const list = result.get(row.contact_id) || [];
+    if (list.length < perContact) {
+      list.push(row.body);
+      result.set(row.contact_id, list);
+    }
+  }
+  return result;
+}
+
 export async function updateDraftStatus(
   id: string,
   status: 'approved' | 'edited' | 'killed' | 'sent',

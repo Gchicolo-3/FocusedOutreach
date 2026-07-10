@@ -3,7 +3,7 @@
 // Reads VOICE rules from constants below
 // NEVER sends. Only drafts. George approves everything.
 
-import { saveDraft } from './db';
+import { saveDraft, getRecentDraftBodiesForContacts } from './db';
 
 // George's voice rules baked in - mirrors VOICE.md
 const GEORGE_VOICE_SYSTEM = `You are drafting outreach messages for George Chicolo, Senior Associate of Business Development at Focus Studio in Northern NJ.
@@ -99,7 +99,31 @@ function openerAngleFor(contactId?: string): string {
   return OPENER_ANGLES[hash % OPENER_ANGLES.length];
 }
 
-function buildPrompt(item: { type: string; data: any }): {
+// The first substantive line of a draft: what follows the "Hey Name," greeting
+// and any SUBJECT: line. Used to show the model which openers are already
+// taken so it doesn't converge on one high-probability first sentence.
+export function extractOpener(body?: string | null): string {
+  if (!body) return '';
+  let text = body.trim();
+  if (text.toUpperCase().startsWith('SUBJECT:')) {
+    text = text.split('\n').slice(1).join('\n').trim();
+  }
+  text = text.replace(/^hey\s+[^,\n]{1,40},\s*/i, '');
+  const firstLine = text.split('\n')[0].trim();
+  return firstLine.length > 140 ? `${firstLine.slice(0, 140).trimEnd()}...` : firstLine;
+}
+
+// Prompt block listing openers the model must not imitate: this contact's
+// recent drafts plus openers already produced in this batch.
+export function buildAvoidOpenersBlock(avoidOpeners: string[]): string {
+  const unique = [...new Set(avoidOpeners.map((o) => o.trim()).filter(Boolean))].slice(0, 8);
+  if (!unique.length) return '';
+  return `\nRecently used openers. Do NOT start your message like any of these, in wording or in structure:\n${unique
+    .map((o) => `- "${o}"`)
+    .join('\n')}\nYour first sentence must take a clearly different angle from all of the above.\n`;
+}
+
+function buildPrompt(item: { type: string; data: any }, avoidOpeners: string[] = []): {
   prompt: string;
   channel: string;
   draftType: string;
@@ -129,7 +153,7 @@ ${isBrokerSignal
   ? 'This is a congratulatory touch. Reference the specific news naturally. Keep it warm and brief.'
   : 'This is an end user growth signal. The company is likely going to need office space. Get in early before a broker is involved.'
 }
-
+${buildAvoidOpenersBlock(avoidOpeners)}
 Channel: ${channel}`;
 
     return {
@@ -164,7 +188,7 @@ ${contact.notes ? `Notes on this person: ${contact.notes}` : ''}
 This is a scheduled cadence touch. No specific signal. Keep it natural and brief.
 Opener direction: ${openerAngleFor(contact.id)} Do not comment on how long it has been since you last spoke.
 ${contact.tier === 'A' ? 'This is an A-tier relationship. Tone should feel like a text from someone they know.' : ''}
-
+${buildAvoidOpenersBlock(avoidOpeners)}
 Channel: ${channel}`;
 
   return {
@@ -178,11 +202,28 @@ Channel: ${channel}`;
   };
 }
 
+// Openers to steer this draft away from: the contact's recent draft openers
+// plus the most recent openers already produced in this batch.
+function avoidOpenersFor(
+  contactId: string | undefined,
+  contactOpeners: Map<string, string[]>,
+  batchOpeners: string[]
+): string[] {
+  const own = contactId ? contactOpeners.get(contactId) || [] : [];
+  return [...own, ...batchOpeners.slice(-5)];
+}
+
 // Process one item: build prompt, call Claude, save the draft. Returns the
 // saved draft, or null if skipped/failed.
-async function draftItem(item: any): Promise<any | null> {
+async function draftItem(
+  item: any,
+  contactOpeners: Map<string, string[]>,
+  batchOpeners: string[]
+): Promise<any | null> {
   try {
-    const { prompt, channel, draftType, contactId, contactTable, contactName, contactCompany, signalId, signalSummary } = buildPrompt(item);
+    const itemContactId = item?.data?.contact_id || item?.data?.id;
+    const avoid = avoidOpenersFor(itemContactId, contactOpeners, batchOpeners);
+    const { prompt, channel, draftType, contactId, contactTable, contactName, contactCompany, signalId, signalSummary } = buildPrompt(item, avoid);
 
     const response = await callClaude(prompt);
 
@@ -216,6 +257,8 @@ async function draftItem(item: any): Promise<any | null> {
 
     if (draft) {
       console.log(`[Copywriter] Draft created for ${contactName || contactCompany || 'unknown'}`);
+      const opener = extractOpener(response);
+      if (opener) batchOpeners.push(opener);
       return draft;
     }
     return null;
@@ -234,11 +277,25 @@ export async function runCopywriter(items: any[]): Promise<any[]> {
   console.log(`[Copywriter] Drafting for ${items.length} items...`);
   const drafts: any[] = [];
 
+  // Anti-repetition context: each contact's recent draft openers (one batched
+  // query) plus a shared list of openers produced during this batch. Workers
+  // read/append the shared list concurrently; slight staleness is fine — the
+  // goal is variety, not exactness.
+  const contactIds = items
+    .map((i) => i?.data?.contact_id || i?.data?.id)
+    .filter(Boolean);
+  const recentBodies = await getRecentDraftBodiesForContacts(contactIds);
+  const contactOpeners = new Map<string, string[]>();
+  for (const [id, bodies] of recentBodies) {
+    contactOpeners.set(id, bodies.map(extractOpener).filter(Boolean));
+  }
+  const batchOpeners: string[] = [];
+
   let cursor = 0;
   async function worker() {
     while (cursor < items.length) {
       const item = items[cursor++];
-      const draft = await draftItem(item);
+      const draft = await draftItem(item, contactOpeners, batchOpeners);
       if (draft) drafts.push(draft);
     }
   }
