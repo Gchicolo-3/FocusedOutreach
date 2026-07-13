@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import TabNav, { TabId } from '@/components/TabNav';
 import Header from '@/components/Header';
 import DoThisNow from '@/components/DoThisNow';
+import Contacts from '@/components/Contacts';
 import BrokerEngine from '@/components/BrokerEngine';
 import ReferralPartners from '@/components/ReferralPartners';
 import TextLauncher from '@/components/TextLauncher';
@@ -41,6 +42,7 @@ export default function Home() {
           <RunClassifierButton onComplete={handleImport} />
         </div>
         {tab === 'do-this-now' && <DoThisNow key={refreshKey} />}
+        {tab === 'contacts' && <Contacts key={refreshKey} onGoToToday={() => setTab('do-this-now')} />}
         {tab === 'broker-engine' && <BrokerEngine key={refreshKey} />}
         {tab === 'referral-partners' && <ReferralPartners key={refreshKey} />}
         {tab === 'text-launcher' && <TextLauncher key={refreshKey} />}
