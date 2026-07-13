@@ -6,8 +6,7 @@
 import {
   getBrokersDueForTouch,
   getPartnersDueForTouch,
-  getRecentlyTouchedContacts,
-  getOpenTaskContactIds
+  getRecentlyTouchedContacts
 } from './db';
 
 export type DueContact = {
@@ -32,29 +31,25 @@ export async function runCadenceManager(): Promise<DueContact[]> {
   const today = new Date();
   const results: DueContact[] = [];
 
-  // Crossing-over data fetched once for the whole run instead of two awaited
-  // queries per contact — the per-contact version was hundreds of round-trips
-  // and a large share of the run's time budget.
-  const [brokers, partners, recentlyTouched, openTaskIds] = await Promise.all([
+  // Crossing-over data fetched once for the whole run instead of a query per
+  // contact — the per-contact version was hundreds of round-trips and a large
+  // share of the run's time budget. Recent-touch (touch_log) is the crossing-
+  // over signal; the old "open task" check queried a non-existent
+  // activities.contact_id column against a status the data never sets, so it
+  // was removed rather than kept as dead, throwing code.
+  const [brokers, partners, recentlyTouched] = await Promise.all([
     getBrokersDueForTouch(),
     getPartnersDueForTouch(),
-    getRecentlyTouchedContacts(),
-    getOpenTaskContactIds()
+    getRecentlyTouchedContacts()
   ]);
   console.log(`[CadenceManager] ${brokers.length} brokers due`);
   console.log(`[CadenceManager] ${partners.length} partners due`);
 
   const cleared = (contact: { id: string; first_name: string; last_name: string }): boolean => {
-    // Crossing-over check: recent activity by anyone?
+    // Crossing-over check: any recent activity for this contact?
     const touchedDate = recentlyTouched.get(contact.id);
     if (touchedDate) {
       console.log(`[CadenceManager] Skipping ${contact.first_name} ${contact.last_name} — touched ${touchedDate}`);
-      return false;
-    }
-
-    // Open task check
-    if (openTaskIds.has(contact.id)) {
-      console.log(`[CadenceManager] Skipping ${contact.first_name} ${contact.last_name} — open task exists`);
       return false;
     }
 

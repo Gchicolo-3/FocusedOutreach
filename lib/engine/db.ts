@@ -182,17 +182,12 @@ export async function getRecentlyTouchedContacts(): Promise<Map<string, string>>
   return touched;
 }
 
-// Contact ids that currently have a pending activity/task.
-export async function getOpenTaskContactIds(): Promise<Set<string>> {
-  const { data, error } = await supabase
-    .from('activities')
-    .select('contact_id')
-    .eq('status', 'pending');
-
-  if (error) throw new Error(`getOpenTaskContactIds: ${error.message}`);
-
-  return new Set((data || []).map((r) => r.contact_id).filter(Boolean));
-}
+// Note: the former getOpenTaskContactIds() crossing-over check was removed.
+// It queried activities.contact_id (a column that does not exist — the table
+// is keyed by contact_key) for status = 'pending' (a status the data never
+// sets; every activities row has an empty status), so it could only ever
+// throw or return nothing. touch_log recency above is the crossing-over
+// signal.
 
 // ============================================================
 // SIGNALS
