@@ -140,6 +140,37 @@ function coldToTask(c: ColdBroker): DailyTask {
   };
 }
 
+// Build DailyTask cards for contacts the user manually pinned to today,
+// resolving each pin against the loaded contact lists. Skips pins whose
+// contact no longer exists.
+export function buildTasksFromPins(
+  pins: Array<{ id: string; source: string }>,
+  prospects: Lead[],
+  brokers: Broker[],
+  partners: Partner[],
+  coldBrokers: ColdBroker[]
+): DailyTask[] {
+  const out: DailyTask[] = [];
+  for (const pin of pins) {
+    let task: DailyTask | null = null;
+    if (pin.source === 'broker') {
+      const b = brokers.find((x) => x.id === pin.id);
+      if (b) task = brokerToTask(b);
+    } else if (pin.source === 'partner') {
+      const p = partners.find((x) => x.id === pin.id);
+      if (p) task = partnerToTask(p);
+    } else if (pin.source === 'prospect') {
+      const p = prospects.find((x) => x.id === pin.id);
+      if (p) task = prospectToTask(p);
+    } else if (pin.source === 'cold_broker') {
+      const c = coldBrokers.find((x) => x.id === pin.id);
+      if (c) task = coldToTask(c);
+    }
+    if (task) out.push(task);
+  }
+  return out;
+}
+
 export function selectDaily5(
   prospects: Lead[],
   brokers: Broker[],

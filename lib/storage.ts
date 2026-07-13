@@ -220,6 +220,34 @@ export async function logTouch(id: string, date: string, channel: Channel): Prom
   if (error) console.error(error);
 }
 
+// ============ PINNED (manually added to Today's queue) ============
+export type PinnedEntry = { id: string; date: string; source: string };
+
+// Contacts the user pinned to today's Do This Now queue. One row per contact
+// (PK is id); re-pinning moves it to today, unpinning deletes it.
+export async function getPinnedToday(): Promise<PinnedEntry[]> {
+  const today = new Date().toISOString().split('T')[0];
+  const { data, error } = await supabase
+    .from('pinned_entries')
+    .select('id, date, source')
+    .eq('date', today);
+  if (error) { console.error('getPinnedToday:', error); return []; }
+  return data || [];
+}
+
+export async function pinToToday(id: string, source: string): Promise<void> {
+  const today = new Date().toISOString().split('T')[0];
+  const { error } = await supabase
+    .from('pinned_entries')
+    .upsert({ id, date: today, source });
+  if (error) console.error('pinToToday:', error);
+}
+
+export async function unpinToday(id: string): Promise<void> {
+  const { error } = await supabase.from('pinned_entries').delete().eq('id', id);
+  if (error) console.error('unpinToday:', error);
+}
+
 // ============ NOTES ============
 export async function getNotes(): Promise<NoteEntry[]> {
   const { data, error } = await supabase.from('notes').select('*');

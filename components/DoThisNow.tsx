@@ -11,12 +11,14 @@ import {
   getSnoozed,
   markDone,
   snoozeLead,
+  getPinnedToday,
+  unpinToday,
   initDefaultBrokers,
   initDefaultColdBrokers,
   getLastLoadError,
   clearLoadError,
 } from '@/lib/storage';
-import { selectDaily5 } from '@/lib/prioritize';
+import { selectDaily5, buildTasksFromPins } from '@/lib/prioritize';
 import { C, F, labelMono, btnSecondary, btnGhost, pillStyle } from '@/lib/design';
 import MessageCard from '@/components/MessageCard';
 
@@ -55,6 +57,7 @@ function motivational(done: number, total: number): string {
 export default function DoThisNow() {
   const [tasks, setTasks] = useState<DailyTask[]>([]);
   const [doneIds, setDoneIds] = useState<Set<string>>(new Set());
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -70,18 +73,34 @@ export default function DoThisNow() {
     const today = new Date().toISOString().split('T')[0];
     clearLoadError();
     try {
-      const [doneAll, snoozedAll, prospects, brokers, partners, coldBrokers] = await Promise.all([
-        getDone(),
-        getSnoozed(),
-        getProspects(),
-        getBrokers(),
-        getPartners(),
-        getColdBrokers(),
-      ]);
+      const [doneAll, snoozedAll, prospects, brokers, partners, coldBrokers, pinned] =
+        await Promise.all([
+          getDone(),
+          getSnoozed(),
+          getProspects(),
+          getBrokers(),
+          getPartners(),
+          getColdBrokers(),
+          getPinnedToday(),
+        ]);
       const done = doneAll.filter((d) => d.date === today).map((d) => d.id);
       const snoozed = snoozedAll.filter((s) => s.until > today).map((s) => s.id);
       setDoneIds(new Set(done));
-      setTasks(selectDaily5(prospects, brokers, partners, coldBrokers, new Set(done), new Set(snoozed)));
+
+      // Contacts the user hand-picked into today go first; the algorithmic
+      // daily 5 fills in behind them, minus anyone already pinned.
+      const pinnedTasks = buildTasksFromPins(pinned, prospects, brokers, partners, coldBrokers);
+      const pinnedIdSet = new Set(pinnedTasks.map((t) => t.id));
+      setPinnedIds(pinnedIdSet);
+      const daily = selectDaily5(
+        prospects,
+        brokers,
+        partners,
+        coldBrokers,
+        new Set(done),
+        new Set(snoozed)
+      ).filter((t) => !pinnedIdSet.has(t.id));
+      setTasks([...pinnedTasks, ...daily]);
       // Surface a silently-swallowed Supabase read failure (e.g. the queue is
       // empty because contacts failed to load, not because there's no work).
       setLoadError(getLastLoadError());
@@ -99,6 +118,16 @@ export default function DoThisNow() {
   async function handleSnooze(id: string) {
     await snoozeLead(id, 2);
     setTasks((prev) => prev.filter((t) => t.id !== id));
+  }
+
+  async function handleUnpin(id: string) {
+    await unpinToday(id);
+    setPinnedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    await loadTasks();
   }
 
   const doneCount = tasks.filter((t) => doneIds.has(t.id)).length;
@@ -214,6 +243,7 @@ export default function DoThisNow() {
                     <span style={labelMono}>{task.company}</span>
                   </div>
                   <div className="flex gap-1.5 mt-2 flex-wrap">
+                    {pinnedIds.has(task.id) && <span style={pillStyle('accent')}>📌 Pinned</span>}
                     <span style={pillStyle(sourcePill[task.source])}>{sourceDisplayLabel[task.source]}</span>
                     <span style={pillStyle(channelPill[task.channel])}>{task.channel}</span>
                     <span style={pillStyle('muted')}>{task.label}</span>
@@ -263,9 +293,15 @@ export default function DoThisNow() {
                   >
                     Mark done
                   </button>
-                  <button onClick={() => handleSnooze(task.id)} style={btnGhost}>
-                    Snooze 2 days
-                  </button>
+                  {pinnedIds.has(task.id) ? (
+                    <button onClick={() => handleUnpin(task.id)} style={btnGhost}>
+                      Unpin
+                    </button>
+                  ) : (
+                    <button onClick={() => handleSnooze(task.id)} style={btnGhost}>
+                      Snooze 2 days
+                    </button>
+                  )}
                 </div>
               </div>
             )}
