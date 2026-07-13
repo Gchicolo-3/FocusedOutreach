@@ -1,17 +1,25 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getBrokers, getPartners, getPinnedToday, pinToToday, unpinToday } from '@/lib/storage';
+import {
+  getBrokers,
+  getPartners,
+  getProspects,
+  getColdBrokers,
+  getPinnedToday,
+  pinToToday,
+  unpinToday,
+} from '@/lib/storage';
 import { startCall } from '@/lib/sendActions';
 import { C, F, labelMono, btnPrimary, btnGhost, pillStyle } from '@/lib/design';
 
-type Source = 'broker' | 'partner';
+type Source = 'broker' | 'partner' | 'prospect' | 'cold_broker';
 type ContactRow = {
   id: string;
   source: Source;
   name: string;
   company: string;
-  tier: string;
+  tier: string; // A/B/C for relationships, T1/T2/T3 for prospects, '' for cold
   lastTouch: string;
   nextDue: string;
   email?: string;
@@ -20,9 +28,12 @@ type ContactRow = {
 type SortKey = 'name' | 'company' | 'source' | 'tier' | 'lastTouch' | 'nextDue';
 type SortDir = 'asc' | 'desc';
 
-const tierRank: Record<string, number> = { A: 0, B: 1, C: 2, D: 3 };
+// Unified tier ordering across sources: relationship tiers first (A..D), then
+// prospect lead tiers (hottest first), cold/unknown last.
+const tierRank: Record<string, number> = {
+  A: 0, B: 1, C: 2, D: 3, T1: 4, T2: 5, T3: 6,
+};
 
-// Parse an ISO-ish date to a timestamp; unparseable/empty -> NaN (sorted last).
 function dateVal(v: string): number {
   if (!v) return NaN;
   return Date.parse(v);
@@ -48,8 +59,25 @@ function compareRows(a: ContactRow, b: ContactRow, key: SortKey, dir: SortDir): 
   return flip * String(a[key] || '').localeCompare(String(b[key] || ''));
 }
 
-const sourceLabel: Record<Source, string> = { broker: 'Broker', partner: 'Partner' };
-const sourcePill: Record<Source, 'purple' | 'teal'> = { broker: 'purple', partner: 'teal' };
+const sourceLabel: Record<Source, string> = {
+  broker: 'Broker',
+  partner: 'Partner',
+  prospect: 'Prospect',
+  cold_broker: 'New Broker',
+};
+const sourcePill: Record<Source, 'purple' | 'teal' | 'accent' | 'blue'> = {
+  broker: 'purple',
+  partner: 'teal',
+  prospect: 'accent',
+  cold_broker: 'blue',
+};
+const filters: Array<{ id: 'all' | Source; label: string }> = [
+  { id: 'all', label: 'All' },
+  { id: 'broker', label: 'Brokers' },
+  { id: 'partner', label: 'Partners' },
+  { id: 'prospect', label: 'Prospects' },
+  { id: 'cold_broker', label: 'New Brokers' },
+];
 
 export default function Contacts({ onGoToToday }: { onGoToToday?: () => void }) {
   const [rows, setRows] = useState<ContactRow[]>([]);
@@ -62,12 +90,14 @@ export default function Contacts({ onGoToToday }: { onGoToToday?: () => void }) 
 
   useEffect(() => {
     (async () => {
-      const [brokers, partners, pinned] = await Promise.all([
+      const [brokers, partners, prospects, cold, pinned] = await Promise.all([
         getBrokers(),
         getPartners(),
+        getProspects(),
+        getColdBrokers(),
         getPinnedToday(),
       ]);
-      const b: ContactRow[] = brokers.map((x) => ({
+      const brokerRows: ContactRow[] = brokers.map((x) => ({
         id: x.id,
         source: 'broker',
         name: `${x.firstName} ${x.lastName}`.trim(),
@@ -78,7 +108,7 @@ export default function Contacts({ onGoToToday }: { onGoToToday?: () => void }) 
         email: x.email,
         phone: x.mobile || x.phone,
       }));
-      const p: ContactRow[] = partners.map((x) => ({
+      const partnerRows: ContactRow[] = partners.map((x) => ({
         id: x.id,
         source: 'partner',
         name: `${x.firstName} ${x.lastName}`.trim(),
@@ -89,7 +119,29 @@ export default function Contacts({ onGoToToday }: { onGoToToday?: () => void }) 
         email: x.email,
         phone: x.phone,
       }));
-      setRows([...b, ...p]);
+      const prospectRows: ContactRow[] = prospects.map((x) => ({
+        id: x.id,
+        source: 'prospect',
+        name: x.contact,
+        company: x.company,
+        tier: x.tier ? `T${x.tier}` : '',
+        lastTouch: x.lastTouch || x.date || '',
+        nextDue: '',
+        email: x.email,
+        phone: x.phone,
+      }));
+      const coldRows: ContactRow[] = cold.map((x) => ({
+        id: x.id,
+        source: 'cold_broker',
+        name: x.name,
+        company: x.firm,
+        tier: '',
+        lastTouch: '',
+        nextDue: '',
+        email: x.email,
+        phone: x.mobile || x.phone,
+      }));
+      setRows([...brokerRows, ...partnerRows, ...prospectRows, ...coldRows]);
       setPinnedIds(new Set(pinned.map((e) => e.id)));
       setLoading(false);
     })();
@@ -100,7 +152,6 @@ export default function Contacts({ onGoToToday }: { onGoToToday?: () => void }) 
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortKey(key);
-      // Dates default to ascending (soonest/oldest first); text/tier too.
       setSortDir('asc');
     }
   }
@@ -178,13 +229,13 @@ export default function Contacts({ onGoToToday }: { onGoToToday?: () => void }) 
             color: C.text,
           }}
         />
-        {(['all', 'broker', 'partner'] as const).map((f) => (
+        {filters.map((f) => (
           <button
-            key={f}
-            onClick={() => setSourceFilter(f)}
-            style={sourceFilter === f ? btnPrimary : btnGhost}
+            key={f.id}
+            onClick={() => setSourceFilter(f.id)}
+            style={sourceFilter === f.id ? btnPrimary : btnGhost}
           >
-            {f === 'all' ? 'All' : f === 'broker' ? 'Brokers' : 'Partners'}
+            {f.label}
           </button>
         ))}
       </div>
@@ -233,7 +284,9 @@ export default function Contacts({ onGoToToday }: { onGoToToday?: () => void }) 
                     <td style={{ padding: '10px 12px' }}>
                       <span style={pillStyle(sourcePill[r.source])}>{sourceLabel[r.source]}</span>
                     </td>
-                    <td style={{ padding: '10px 12px', textAlign: 'center', color: C.text }}>{r.tier}</td>
+                    <td style={{ padding: '10px 12px', textAlign: 'center', color: C.text }}>
+                      {r.tier || '—'}
+                    </td>
                     <td style={{ padding: '10px 12px', color: C.muted, whiteSpace: 'nowrap' }}>
                       {r.lastTouch || '—'}
                     </td>
