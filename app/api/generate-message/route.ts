@@ -17,6 +17,16 @@ type GenerateRequest = {
   lastTouch?: string;
 };
 
+// George's voice opens with "Hey [name]," never "Hi"/"Hello". The model
+// occasionally slips despite the prompt, so enforce it deterministically on the
+// greeting line (line-start "Hi/Hello <name>," → "Hey <name>,").
+function enforceHeyOpener(text: string): string {
+  return text.replace(
+    /(^|\n)([ \t]*)(?:Hi|Hello)(\s+[^\n,]{1,40},)/g,
+    '$1$2Hey$3'
+  );
+}
+
 const channelInstructions: Record<Channel, string> = {
   text: 'Write a text message. Max 3 short lines. Casual, warm, punchy. Open with "Hey [first name] —". No subject line.',
   email:
@@ -79,13 +89,13 @@ export async function POST(req: NextRequest) {
     });
 
     const textBlock = response.content.find((b) => b.type === 'text');
-    const text = textBlock && textBlock.type === 'text' ? textBlock.text.trim() : '';
+    const raw = textBlock && textBlock.type === 'text' ? textBlock.text.trim() : '';
 
-    if (!text) {
+    if (!raw) {
       return NextResponse.json({ error: 'No text generated' }, { status: 500 });
     }
 
-    return NextResponse.json({ message: text });
+    return NextResponse.json({ message: enforceHeyOpener(raw) });
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError) {
       console.error('[generate-message] auth error:', err.message);
