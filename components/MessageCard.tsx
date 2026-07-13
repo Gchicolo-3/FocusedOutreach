@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { generateMessage, GenerateChannel } from '@/lib/toneProfile';
-import { openInMessages, composeInOutlook } from '@/lib/sendActions';
+import { openInMessages, composeInOutlook, startCall } from '@/lib/sendActions';
 import { C, F, labelMono, inputBase } from '@/lib/design';
 
 type MessageCardProps = {
@@ -111,6 +111,15 @@ export default function MessageCard({
     void composeInOutlook(email, msgSubject || `Focus Studio — ${firstName}`, message);
   }
 
+  function handleCall() {
+    const p = phoneInput || phone || '';
+    if (!p) {
+      setShowPhoneInput(true);
+      return;
+    }
+    startCall(p);
+  }
+
   const actionBtn = (opts: {
     onClick: () => void | Promise<void>;
     label: string;
@@ -201,9 +210,10 @@ export default function MessageCard({
           {actionBtn({
             onClick: () => {
               setShowPhoneInput(false);
-              openInMessages(phoneInput, message);
+              if (activeChannel === 'call') startCall(phoneInput);
+              else openInMessages(phoneInput, message);
             },
-            label: 'Open Messages',
+            label: activeChannel === 'call' ? 'Call' : 'Open Messages',
             bg: C.amberBg,
             color: C.amber,
             border: 'rgba(255,201,74,0.25)',
@@ -229,13 +239,22 @@ export default function MessageCard({
           border: copied ? 'rgba(200,240,74,0.3)' : C.border,
         })}
 
-        {(activeChannel === 'text' || activeChannel === 'call') &&
+        {activeChannel === 'text' &&
           actionBtn({
             onClick: handleSendText,
             label: '📱 Open in Messages',
             bg: 'rgba(255,201,74,0.08)',
             color: C.amber,
             border: 'rgba(255,201,74,0.25)',
+          })}
+
+        {activeChannel === 'call' &&
+          actionBtn({
+            onClick: handleCall,
+            label: '📞 Call',
+            bg: 'rgba(200,240,74,0.1)',
+            color: C.accent,
+            border: 'rgba(200,240,74,0.3)',
           })}
 
         {activeChannel === 'email' &&

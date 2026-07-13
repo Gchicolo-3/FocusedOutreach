@@ -59,6 +59,15 @@ export async function composeInOutlook(
   }
 }
 
+// Opens the OS dialer (tel:). On a phone this places the call; on desktop it
+// hands off to the paired-phone / FaceTime / Skype handler.
+export function startCall(phone: string): void {
+  if (typeof window === 'undefined') return;
+  const cleanPhone = (phone || '').replace(/[^\d+]/g, '');
+  if (!cleanPhone) return;
+  window.location.href = `tel:${cleanPhone}`;
+}
+
 export function openLinkedIn(linkedinUrl: string): void {
   if (typeof window === 'undefined') return;
   if (!linkedinUrl) return;
