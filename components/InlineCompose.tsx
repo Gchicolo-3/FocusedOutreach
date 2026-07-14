@@ -45,9 +45,11 @@ export default function InlineCompose({
     setTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
   }
 
-  function buildIntel(): string {
-    const tagLine = tags.length ? `George wants to share: ${tags.join(', ')}.` : '';
-    return [intel, context.trim(), tagLine].filter(Boolean).join(' ');
+  // What the email should be about: what George typed plus anything he chose
+  // to include. The contact's notes go separately as background intel.
+  function buildPurpose(): string {
+    const tagLine = tags.length ? `Wants to mention: ${tags.join(', ')}.` : '';
+    return [context.trim(), tagLine].filter(Boolean).join(' ');
   }
 
   async function handleGenerate() {
@@ -59,7 +61,8 @@ export default function InlineCompose({
         contactName,
         company,
         channel: 'email',
-        intel: buildIntel(),
+        purpose: buildPurpose(),
+        intel,
         lastTouch,
       });
 
@@ -138,13 +141,13 @@ export default function InlineCompose({
         </div>
       </div>
 
-      {/* Context */}
-      <div style={fieldLabel}>What&apos;s the context?</div>
+      {/* Purpose */}
+      <div style={fieldLabel}>What&apos;s this email about?</div>
       <textarea
         value={context}
         onChange={(e) => setContext(e.target.value)}
         rows={3}
-        placeholder="e.g. met in person yesterday, want to send broker deck, thank for time"
+        placeholder="e.g. saw their 40k SF lease at 101 Hudson, want to offer a test fit before they sign"
         style={{ ...inputBase, resize: 'vertical', lineHeight: 1.6, marginBottom: 14 }}
       />
 

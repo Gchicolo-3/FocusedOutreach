@@ -33,6 +33,7 @@ export default function MessageCard({
   lastTouch,
 }: MessageCardProps) {
   const [activeChannel, setActiveChannel] = useState<GenerateChannel>(initialChannel);
+  const [purpose, setPurpose] = useState('');
   const [message, setMessage] = useState(initialMessage);
   const [msgSubject, setMsgSubject] = useState(subject || '');
   const [generating, setGenerating] = useState(false);
@@ -59,6 +60,7 @@ export default function MessageCard({
         contactName,
         company,
         channel: activeChannel,
+        purpose,
         intel,
         broker,
         opportunity,
@@ -190,6 +192,16 @@ export default function MessageCard({
           />
         </div>
       )}
+
+      <div style={{ ...labelMono, marginBottom: 6 }}>
+        What&apos;s this about? — drives the message; notes are just background
+      </div>
+      <input
+        value={purpose}
+        onChange={(e) => setPurpose(e.target.value)}
+        placeholder="e.g. saw the 101 Hudson deal, want to offer a test fit"
+        style={{ ...inputBase, marginBottom: 12 }}
+      />
 
       <div style={{ ...labelMono, marginBottom: 6 }}>Message — edit before sending</div>
       <textarea

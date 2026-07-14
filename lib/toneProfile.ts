@@ -118,6 +118,9 @@ export type GenerateMessageArgs = {
   contactName: string;
   company: string;
   channel: GenerateChannel;
+  /** What the message should actually be about — the point George wants to make. */
+  purpose?: string;
+  /** Background on the person (notes). Used for light personalization only. */
   intel?: string;
   broker?: string;
   opportunity?: string;

@@ -11,6 +11,7 @@ type GenerateRequest = {
   contactName: string;
   company: string;
   channel: Channel;
+  purpose?: string;
   intel?: string;
   broker?: string;
   opportunity?: string;
@@ -30,7 +31,7 @@ function enforceHeyOpener(text: string): string {
 const channelInstructions: Record<Channel, string> = {
   text: 'Write a text message. Max 3 short lines. Casual, warm, punchy. Open with "Hey [first name] —". No subject line.',
   email:
-    'Write an email. Max 4 sentences. Include a subject line on the first line prefixed with "Subject: " then a blank line, then the body. Open body with "Hi [first name]," and close with "Best, George".',
+    'Write an email. Max 4 sentences. Include a subject line on the first line prefixed with "Subject: " then a blank line, then the body. Open body with "Hey [first name]," and close with "Best, George".',
   linkedin:
     'Write a LinkedIn message. Max 3 sentences. Professional but warm and direct. No subject line.',
   call:
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { contactName, company, channel, intel, broker, opportunity, lastTouch } = body;
+  const { contactName, company, channel, purpose, intel, broker, opportunity, lastTouch } = body;
 
   if (!contactName || !company || !channel) {
     return NextResponse.json(
@@ -61,12 +62,22 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const purposeText = (purpose || '').trim();
+
   const prompt = [
     `Contact: ${contactName}`,
     `Company: ${company}`,
     `Channel instruction: ${channelInstructions[channel] ?? channelInstructions.text}`,
-    `Intel/context: ${intel || 'No specific intel — general outreach'}`,
-    broker ? `Referring broker/source: ${broker}` : '',
+    // The purpose is what the message is ABOUT. Intel is only background —
+    // separated so the model writes the message George intends instead of
+    // turning his notes into the subject of the email.
+    purposeText
+      ? `WHAT THIS MESSAGE IS ABOUT — write about this, this is the point: ${purposeText}`
+      : 'No specific purpose given. This is a light relationship touch — keep it short and natural, do not manufacture a reason.',
+    intel
+      ? `Background on this person (for light personalization only — use at most one detail if it fits naturally; do NOT make the message about this and do NOT summarize it): ${intel}`
+      : '',
+    broker ? `Referring broker/source (mention naturally if relevant): ${broker}` : '',
     opportunity ? `Opportunity: ${opportunity}` : '',
     lastTouch ? `Last touch: ${lastTouch}` : 'First outreach',
     '',
