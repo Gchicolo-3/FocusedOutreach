@@ -10,7 +10,7 @@ import {
   pinToToday,
   unpinToday,
 } from '@/lib/storage';
-import { startCall } from '@/lib/sendActions';
+import { startCall, openInMessages, composeInOutlook } from '@/lib/sendActions';
 import { C, F, labelMono, btnPrimary, btnGhost, pillStyle } from '@/lib/design';
 
 type Source = 'broker' | 'partner' | 'prospect' | 'cold_broker';
@@ -28,11 +28,16 @@ type ContactRow = {
 type SortKey = 'name' | 'company' | 'source' | 'tier' | 'lastTouch' | 'nextDue';
 type SortDir = 'asc' | 'desc';
 
-// Unified tier ordering across sources: relationship tiers first (A..D), then
-// prospect lead tiers (hottest first), cold/unknown last.
-const tierRank: Record<string, number> = {
-  A: 0, B: 1, C: 2, D: 3, T1: 4, T2: 5, T3: 6,
-};
+const tierRank: Record<string, number> = { A: 0, B: 1, C: 2, D: 3, T1: 4, T2: 5, T3: 6 };
+
+const sortOptions: Array<{ key: SortKey; label: string }> = [
+  { key: 'nextDue', label: 'Next due' },
+  { key: 'lastTouch', label: 'Last touch' },
+  { key: 'tier', label: 'Tier' },
+  { key: 'name', label: 'Name' },
+  { key: 'company', label: 'Company' },
+  { key: 'source', label: 'Type' },
+];
 
 function dateVal(v: string): number {
   if (!v) return NaN;
@@ -41,7 +46,6 @@ function dateVal(v: string): number {
 
 function compareRows(a: ContactRow, b: ContactRow, key: SortKey, dir: SortDir): number {
   const flip = dir === 'asc' ? 1 : -1;
-
   if (key === 'tier') {
     return flip * ((tierRank[a.tier] ?? 9) - (tierRank[b.tier] ?? 9));
   }
@@ -50,9 +54,8 @@ function compareRows(a: ContactRow, b: ContactRow, key: SortKey, dir: SortDir): 
     const bv = dateVal(b[key]);
     const aNan = Number.isNaN(av);
     const bNan = Number.isNaN(bv);
-    // Blanks always sort last, regardless of direction.
     if (aNan && bNan) return 0;
-    if (aNan) return 1;
+    if (aNan) return 1; // blanks always last
     if (bNan) return -1;
     return flip * (av - bv);
   }
@@ -76,8 +79,31 @@ const filters: Array<{ id: 'all' | Source; label: string }> = [
   { id: 'broker', label: 'Brokers' },
   { id: 'partner', label: 'Partners' },
   { id: 'prospect', label: 'Prospects' },
-  { id: 'cold_broker', label: 'New Brokers' },
+  { id: 'cold_broker', label: 'New' },
 ];
+
+// Compact icon button for the per-row channel actions.
+function iconBtn(onClick: () => void, icon: string, title: string, disabled?: boolean) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={disabled ? `${title} (none on file)` : title}
+      style={{
+        fontSize: 15,
+        lineHeight: 1,
+        padding: '7px 9px',
+        borderRadius: 8,
+        cursor: disabled ? 'default' : 'pointer',
+        background: C.surface2,
+        border: `1px solid ${C.border}`,
+        opacity: disabled ? 0.3 : 1,
+      }}
+    >
+      {icon}
+    </button>
+  );
+}
 
 export default function Contacts({ onGoToToday }: { onGoToToday?: () => void }) {
   const [rows, setRows] = useState<ContactRow[]>([]);
@@ -98,63 +124,29 @@ export default function Contacts({ onGoToToday }: { onGoToToday?: () => void }) 
         getPinnedToday(),
       ]);
       const brokerRows: ContactRow[] = brokers.map((x) => ({
-        id: x.id,
-        source: 'broker',
-        name: `${x.firstName} ${x.lastName}`.trim(),
-        company: x.firm,
-        tier: x.tier,
-        lastTouch: x.lastTouch || '',
-        nextDue: x.nextDue || '',
-        email: x.email,
-        phone: x.mobile || x.phone,
+        id: x.id, source: 'broker', name: `${x.firstName} ${x.lastName}`.trim(),
+        company: x.firm, tier: x.tier, lastTouch: x.lastTouch || '', nextDue: x.nextDue || '',
+        email: x.email, phone: x.mobile || x.phone,
       }));
       const partnerRows: ContactRow[] = partners.map((x) => ({
-        id: x.id,
-        source: 'partner',
-        name: `${x.firstName} ${x.lastName}`.trim(),
-        company: x.company,
-        tier: x.tier,
-        lastTouch: x.lastTouch || '',
-        nextDue: x.nextDue || '',
-        email: x.email,
-        phone: x.phone,
+        id: x.id, source: 'partner', name: `${x.firstName} ${x.lastName}`.trim(),
+        company: x.company, tier: x.tier, lastTouch: x.lastTouch || '', nextDue: x.nextDue || '',
+        email: x.email, phone: x.phone,
       }));
       const prospectRows: ContactRow[] = prospects.map((x) => ({
-        id: x.id,
-        source: 'prospect',
-        name: x.contact,
-        company: x.company,
-        tier: x.tier ? `T${x.tier}` : '',
-        lastTouch: x.lastTouch || x.date || '',
-        nextDue: '',
-        email: x.email,
-        phone: x.phone,
+        id: x.id, source: 'prospect', name: x.contact, company: x.company,
+        tier: x.tier ? `T${x.tier}` : '', lastTouch: x.lastTouch || x.date || '', nextDue: '',
+        email: x.email, phone: x.phone,
       }));
       const coldRows: ContactRow[] = cold.map((x) => ({
-        id: x.id,
-        source: 'cold_broker',
-        name: x.name,
-        company: x.firm,
-        tier: '',
-        lastTouch: '',
-        nextDue: '',
-        email: x.email,
-        phone: x.mobile || x.phone,
+        id: x.id, source: 'cold_broker', name: x.name, company: x.firm, tier: '',
+        lastTouch: '', nextDue: '', email: x.email, phone: x.mobile || x.phone,
       }));
       setRows([...brokerRows, ...partnerRows, ...prospectRows, ...coldRows]);
       setPinnedIds(new Set(pinned.map((e) => e.id)));
       setLoading(false);
     })();
   }, []);
-
-  function toggleSort(key: SortKey) {
-    if (key === sortKey) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortKey(key);
-      setSortDir('asc');
-    }
-  }
 
   async function togglePin(row: ContactRow) {
     if (pinnedIds.has(row.id)) {
@@ -177,162 +169,161 @@ export default function Contacts({ onGoToToday }: { onGoToToday?: () => void }) 
     .sort((a, b) => compareRows(a, b, sortKey, sortDir));
 
   const pinnedCount = pinnedIds.size;
-
-  const th = (label: string, key: SortKey, align: 'left' | 'center' = 'left') => (
-    <th
-      onClick={() => toggleSort(key)}
-      style={{
-        ...labelMono,
-        textAlign: align,
-        padding: '10px 12px',
-        cursor: 'pointer',
-        whiteSpace: 'nowrap',
-        userSelect: 'none',
-        borderBottom: `1px solid ${C.border}`,
-        color: sortKey === key ? C.text : C.muted,
-      }}
-    >
-      {label}
-      {sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
-    </th>
-  );
+  const selectStyle: React.CSSProperties = {
+    background: C.surface2,
+    border: `1px solid ${C.border}`,
+    borderRadius: 8,
+    padding: '7px 10px',
+    fontSize: 12,
+    color: C.text,
+    fontFamily: F.mono,
+  };
 
   return (
-    <div className="flex flex-col gap-4 fade-up">
+    <div className="flex flex-col gap-3 fade-up">
       <div className="flex items-baseline justify-between flex-wrap gap-2">
-        <h2 style={{ fontFamily: F.display, fontSize: 18, fontWeight: 700, color: C.text }}>
-          Contacts
-        </h2>
+        <h2 style={{ fontFamily: F.display, fontSize: 18, fontWeight: 700, color: C.text }}>Contacts</h2>
         <div className="flex items-center gap-3">
           {pinnedCount > 0 && onGoToToday && (
             <button onClick={onGoToToday} style={{ ...labelMono, color: C.accent, cursor: 'pointer' }}>
-              {pinnedCount} pinned → view in Today
+              {pinnedCount} pinned → Today
             </button>
           )}
           <span style={labelMono}>{filtered.length} shown</span>
         </div>
       </div>
 
-      {/* Search + source filter */}
-      <div className="flex gap-2 flex-wrap items-center">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search name or company…"
-          style={{
-            flex: '1 1 220px',
-            background: C.surface2,
-            border: `1px solid ${C.border}`,
-            borderRadius: 8,
-            padding: '8px 12px',
-            fontSize: 13,
-            color: C.text,
-          }}
-        />
+      {/* Search */}
+      <input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search name or company…"
+        style={{
+          background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8,
+          padding: '9px 12px', fontSize: 14, color: C.text, width: '100%',
+        }}
+      />
+
+      {/* Source filter */}
+      <div className="flex gap-2 flex-wrap">
         {filters.map((f) => (
           <button
             key={f.id}
             onClick={() => setSourceFilter(f.id)}
-            style={sourceFilter === f.id ? btnPrimary : btnGhost}
+            style={{ ...(sourceFilter === f.id ? btnPrimary : btnGhost), padding: '6px 12px' }}
           >
             {f.label}
           </button>
         ))}
       </div>
 
+      {/* Sort control */}
+      <div className="flex items-center gap-2">
+        <span style={labelMono}>Sort</span>
+        <select
+          value={sortKey}
+          onChange={(e) => setSortKey(e.target.value as SortKey)}
+          style={selectStyle}
+        >
+          {sortOptions.map((o) => (
+            <option key={o.key} value={o.key}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+          title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
+          style={{ ...selectStyle, cursor: 'pointer', minWidth: 40 }}
+        >
+          {sortDir === 'asc' ? '↑' : '↓'}
+        </button>
+      </div>
+
       {loading ? (
         <div style={{ ...labelMono, padding: 24, textAlign: 'center' }}>Loading contacts…</div>
-      ) : (
+      ) : filtered.length === 0 ? (
         <div
           style={{
-            background: C.surface,
-            border: `1px solid ${C.border}`,
-            borderRadius: 12,
-            overflowX: 'auto',
+            background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12,
+            padding: 24, textAlign: 'center', color: C.muted,
           }}
         >
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr>
-                {th('Name', 'name')}
-                {th('Company', 'company')}
-                {th('Type', 'source')}
-                {th('Tier', 'tier', 'center')}
-                {th('Last touch', 'lastTouch')}
-                {th('Next due', 'nextDue')}
-                <th
-                  style={{
-                    ...labelMono,
-                    textAlign: 'right',
-                    padding: '10px 12px',
-                    borderBottom: `1px solid ${C.border}`,
-                  }}
-                >
-                  Action
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((r) => {
-                const isPinned = pinnedIds.has(r.id);
-                return (
-                  <tr key={`${r.source}-${r.id}`} style={{ borderBottom: `1px solid ${C.border}` }}>
-                    <td style={{ padding: '10px 12px', fontWeight: 600, color: C.text, whiteSpace: 'nowrap' }}>
+          No contacts match.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {filtered.map((r) => {
+            const isPinned = pinnedIds.has(r.id);
+            const meta = [r.lastTouch && `Last ${r.lastTouch}`, r.nextDue && `Due ${r.nextDue}`]
+              .filter(Boolean)
+              .join(' · ');
+            return (
+              <div
+                key={`${r.source}-${r.id}`}
+                style={{
+                  background: C.surface,
+                  border: `1px solid ${isPinned ? 'rgba(200,240,74,0.35)' : C.border}`,
+                  borderRadius: 12,
+                  padding: '12px 14px',
+                }}
+                className="flex items-center justify-between gap-3 flex-wrap"
+              >
+                {/* Identity */}
+                <div style={{ minWidth: 0, flex: '1 1 200px' }}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      style={{
+                        fontFamily: F.display, fontWeight: 600, fontSize: 15, color: C.text,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}
+                    >
                       {r.name}
-                    </td>
-                    <td style={{ padding: '10px 12px', color: C.muted }}>{r.company}</td>
-                    <td style={{ padding: '10px 12px' }}>
-                      <span style={pillStyle(sourcePill[r.source])}>{sourceLabel[r.source]}</span>
-                    </td>
-                    <td style={{ padding: '10px 12px', textAlign: 'center', color: C.text }}>
-                      {r.tier || '—'}
-                    </td>
-                    <td style={{ padding: '10px 12px', color: C.muted, whiteSpace: 'nowrap' }}>
-                      {r.lastTouch || '—'}
-                    </td>
-                    <td style={{ padding: '10px 12px', color: C.muted, whiteSpace: 'nowrap' }}>
-                      {r.nextDue || '—'}
-                    </td>
-                    <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', textAlign: 'right' }}>
-                      <div className="flex gap-2 justify-end">
-                        {r.phone && (
-                          <button
-                            onClick={() => startCall(r.phone!)}
-                            title={`Call ${r.name}`}
-                            style={{ ...btnGhost, padding: '6px 10px' }}
-                          >
-                            📞
-                          </button>
-                        )}
-                        <button
-                          onClick={() => togglePin(r)}
-                          style={{
-                            ...(isPinned ? btnGhost : btnPrimary),
-                            padding: '6px 12px',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {isPinned ? '✓ Added' : '+ Today'}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={7} style={{ ...labelMono, padding: 24, textAlign: 'center' }}>
-                    No contacts match.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                    </span>
+                    <span style={pillStyle(sourcePill[r.source])}>{sourceLabel[r.source]}</span>
+                    {r.tier && <span style={pillStyle('muted')}>{r.tier}</span>}
+                  </div>
+                  <div style={{ ...labelMono, marginTop: 3, textTransform: 'none', letterSpacing: 0 }}>
+                    {r.company}
+                    {meta ? ` · ${meta}` : ''}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {iconBtn(
+                    () => r.email && composeInOutlook(r.email, '', ''),
+                    '✉️',
+                    'Email in Outlook',
+                    !r.email
+                  )}
+                  {iconBtn(
+                    () => r.phone && openInMessages(r.phone, ''),
+                    '💬',
+                    'Text',
+                    !r.phone
+                  )}
+                  {iconBtn(() => r.phone && startCall(r.phone), '📞', 'Call', !r.phone)}
+                  <button
+                    onClick={() => togglePin(r)}
+                    style={{
+                      ...(isPinned ? btnGhost : btnPrimary),
+                      padding: '7px 12px',
+                      whiteSpace: 'nowrap',
+                      fontSize: 12,
+                    }}
+                  >
+                    {isPinned ? '✓ Added' : '+ Today'}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
       <div style={{ ...labelMono, color: C.muted2 }}>
-        Added contacts appear at the top of Do This Now, where you can email, text, or call them.
+        Tap a channel to reach someone now, or + Today to compose in your voice from Do This Now.
       </div>
     </div>
   );
