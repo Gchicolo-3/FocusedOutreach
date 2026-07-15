@@ -87,16 +87,22 @@ export default function DoThisNow() {
       const snoozed = snoozedAll.filter((s) => s.until > today).map((s) => s.id);
       setDoneIds(new Set(done));
 
+      // Drop anyone marked "not a fit" before selection.
+      const activeBrokers = brokers.filter((b) => !b.dismissed);
+      const activePartners = partners.filter((p) => !p.dismissed);
+      const activeProspects = prospects.filter((p) => !p.dismissed);
+      const activeCold = coldBrokers.filter((c) => !c.dismissed);
+
       // Contacts the user hand-picked into today go first; the algorithmic
       // daily 5 fills in behind them, minus anyone already pinned.
-      const pinnedTasks = buildTasksFromPins(pinned, prospects, brokers, partners, coldBrokers);
+      const pinnedTasks = buildTasksFromPins(pinned, activeProspects, activeBrokers, activePartners, activeCold);
       const pinnedIdSet = new Set(pinnedTasks.map((t) => t.id));
       setPinnedIds(pinnedIdSet);
       const daily = selectDaily5(
-        prospects,
-        brokers,
-        partners,
-        coldBrokers,
+        activeProspects,
+        activeBrokers,
+        activePartners,
+        activeCold,
         new Set(done),
         new Set(snoozed)
       ).filter((t) => !pinnedIdSet.has(t.id));

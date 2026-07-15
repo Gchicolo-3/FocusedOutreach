@@ -9,6 +9,8 @@ import {
   getPinnedToday,
   pinToToday,
   unpinToday,
+  dismissContact,
+  restoreContact,
 } from '@/lib/storage';
 import { startCall, openInMessages, composeInOutlook } from '@/lib/sendActions';
 import { C, F, labelMono, btnPrimary, btnGhost, pillStyle } from '@/lib/design';
@@ -24,6 +26,7 @@ type ContactRow = {
   nextDue: string;
   email?: string;
   phone?: string;
+  dismissed: boolean;
 };
 type SortKey = 'name' | 'company' | 'source' | 'tier' | 'lastTouch' | 'nextDue';
 type SortDir = 'asc' | 'desc';
@@ -108,6 +111,8 @@ function iconBtn(onClick: () => void, icon: string, title: string, disabled?: bo
 export default function Contacts({ onGoToToday }: { onGoToToday?: () => void }) {
   const [rows, setRows] = useState<ContactRow[]>([]);
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  const [showDismissed, setShowDismissed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState<'all' | Source>('all');
@@ -126,24 +131,27 @@ export default function Contacts({ onGoToToday }: { onGoToToday?: () => void }) 
       const brokerRows: ContactRow[] = brokers.map((x) => ({
         id: x.id, source: 'broker', name: `${x.firstName} ${x.lastName}`.trim(),
         company: x.firm, tier: x.tier, lastTouch: x.lastTouch || '', nextDue: x.nextDue || '',
-        email: x.email, phone: x.mobile || x.phone,
+        email: x.email, phone: x.mobile || x.phone, dismissed: !!x.dismissed,
       }));
       const partnerRows: ContactRow[] = partners.map((x) => ({
         id: x.id, source: 'partner', name: `${x.firstName} ${x.lastName}`.trim(),
         company: x.company, tier: x.tier, lastTouch: x.lastTouch || '', nextDue: x.nextDue || '',
-        email: x.email, phone: x.phone,
+        email: x.email, phone: x.phone, dismissed: !!x.dismissed,
       }));
       const prospectRows: ContactRow[] = prospects.map((x) => ({
         id: x.id, source: 'prospect', name: x.contact, company: x.company,
         tier: x.tier ? `T${x.tier}` : '', lastTouch: x.lastTouch || x.date || '', nextDue: '',
-        email: x.email, phone: x.phone,
+        email: x.email, phone: x.phone, dismissed: !!x.dismissed,
       }));
       const coldRows: ContactRow[] = cold.map((x) => ({
         id: x.id, source: 'cold_broker', name: x.name, company: x.firm, tier: '',
         lastTouch: '', nextDue: '', email: x.email, phone: x.mobile || x.phone,
+        dismissed: !!x.dismissed,
       }));
-      setRows([...brokerRows, ...partnerRows, ...prospectRows, ...coldRows]);
+      const all = [...brokerRows, ...partnerRows, ...prospectRows, ...coldRows];
+      setRows(all);
       setPinnedIds(new Set(pinned.map((e) => e.id)));
+      setDismissedIds(new Set(all.filter((r) => r.dismissed).map((r) => r.id)));
       setLoading(false);
     })();
   }, []);
@@ -162,13 +170,38 @@ export default function Contacts({ onGoToToday }: { onGoToToday?: () => void }) 
     }
   }
 
+  async function handleDismiss(row: ContactRow) {
+    setDismissedIds((prev) => new Set(prev).add(row.id));
+    // If it was pinned, unpin it too so it doesn't linger in Today.
+    if (pinnedIds.has(row.id)) {
+      setPinnedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(row.id);
+        return next;
+      });
+      await unpinToday(row.id);
+    }
+    await dismissContact(row.id, row.source);
+  }
+
+  async function handleRestore(row: ContactRow) {
+    setDismissedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(row.id);
+      return next;
+    });
+    await restoreContact(row.id, row.source);
+  }
+
   const q = search.trim().toLowerCase();
   const filtered = rows
+    .filter((r) => (showDismissed ? dismissedIds.has(r.id) : !dismissedIds.has(r.id)))
     .filter((r) => sourceFilter === 'all' || r.source === sourceFilter)
     .filter((r) => !q || r.name.toLowerCase().includes(q) || r.company.toLowerCase().includes(q))
     .sort((a, b) => compareRows(a, b, sortKey, sortDir));
 
   const pinnedCount = pinnedIds.size;
+  const dismissedCount = dismissedIds.size;
   const selectStyle: React.CSSProperties = {
     background: C.surface2,
     border: `1px solid ${C.border}`,
@@ -238,6 +271,13 @@ export default function Contacts({ onGoToToday }: { onGoToToday?: () => void }) 
         >
           {sortDir === 'asc' ? '↑' : '↓'}
         </button>
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={() => setShowDismissed((v) => !v)}
+          style={{ ...(showDismissed ? btnPrimary : btnGhost), padding: '6px 12px' }}
+        >
+          {showDismissed ? '← Active' : `Not a fit${dismissedCount ? ` (${dismissedCount})` : ''}`}
+        </button>
       </div>
 
       {loading ? (
@@ -291,30 +331,37 @@ export default function Contacts({ onGoToToday }: { onGoToToday?: () => void }) 
 
                 {/* Actions */}
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  {iconBtn(
-                    () => r.email && composeInOutlook(r.email, '', ''),
-                    '✉️',
-                    'Email in Outlook',
-                    !r.email
+                  {showDismissed ? (
+                    <button
+                      onClick={() => handleRestore(r)}
+                      style={{ ...btnGhost, padding: '7px 12px', whiteSpace: 'nowrap', fontSize: 12 }}
+                    >
+                      ↩ Restore
+                    </button>
+                  ) : (
+                    <>
+                      {iconBtn(
+                        () => r.email && composeInOutlook(r.email, '', ''),
+                        '✉️',
+                        'Email in Outlook',
+                        !r.email
+                      )}
+                      {iconBtn(() => r.phone && openInMessages(r.phone, ''), '💬', 'Text', !r.phone)}
+                      {iconBtn(() => r.phone && startCall(r.phone), '📞', 'Call', !r.phone)}
+                      <button
+                        onClick={() => togglePin(r)}
+                        style={{
+                          ...(isPinned ? btnGhost : btnPrimary),
+                          padding: '7px 12px',
+                          whiteSpace: 'nowrap',
+                          fontSize: 12,
+                        }}
+                      >
+                        {isPinned ? '✓ Added' : '+ Today'}
+                      </button>
+                      {iconBtn(() => handleDismiss(r), '⊘', 'Not a fit — remove from lists')}
+                    </>
                   )}
-                  {iconBtn(
-                    () => r.phone && openInMessages(r.phone, ''),
-                    '💬',
-                    'Text',
-                    !r.phone
-                  )}
-                  {iconBtn(() => r.phone && startCall(r.phone), '📞', 'Call', !r.phone)}
-                  <button
-                    onClick={() => togglePin(r)}
-                    style={{
-                      ...(isPinned ? btnGhost : btnPrimary),
-                      padding: '7px 12px',
-                      whiteSpace: 'nowrap',
-                      fontSize: 12,
-                    }}
-                  >
-                    {isPinned ? '✓ Added' : '+ Today'}
-                  </button>
                 </div>
               </div>
             );

@@ -34,6 +34,7 @@ export async function getProspects(): Promise<Lead[]> {
     status: r.status, priority: r.priority, comments: r.comments,
     tier: r.tier, broker: r.broker, channel: r.channel,
     lastTouch: r.last_touch, email: r.email, phone: r.phone,
+    dismissed: r.dismissed ?? false,
   }));
 }
 
@@ -63,7 +64,7 @@ export async function getBrokers(): Promise<Broker[]> {
     mobile: r.mobile, linkedin: r.linkedin, tier: r.tier,
     dealCount: r.deal_count, dealNames: r.deal_names || [],
     lastTouch: r.last_touch, nextDue: r.next_due, notes: r.notes,
-    status: r.status,
+    status: r.status, dismissed: r.dismissed ?? false,
   }));
 }
 
@@ -117,7 +118,7 @@ export async function getPartners(): Promise<Partner[]> {
     company: r.company, title: r.title, partnerType: r.partner_type,
     tier: r.tier, referralCount: r.referral_count,
     lastTouch: r.last_touch, nextDue: r.next_due, notes: r.notes,
-    email: r.email, phone: r.phone,
+    email: r.email, phone: r.phone, dismissed: r.dismissed ?? false,
   }));
 }
 
@@ -246,6 +247,37 @@ export async function pinToToday(id: string, source: string): Promise<void> {
 export async function unpinToday(id: string): Promise<void> {
   const { error } = await supabase.from('pinned_entries').delete().eq('id', id);
   if (error) console.error('unpinToday:', error);
+}
+
+// ============ DISMISSED (manually marked not a fit) ============
+export type ContactSource = 'broker' | 'partner' | 'prospect' | 'cold_broker';
+const tableForSource: Record<ContactSource, string> = {
+  broker: 'brokers',
+  partner: 'partners',
+  prospect: 'prospects',
+  cold_broker: 'cold_brokers',
+};
+
+// Mark a contact "not a fit" — drops them from the cadence engine, Do This Now,
+// and the default Contacts view. Reversible via restoreContact.
+export async function dismissContact(id: string, source: ContactSource, reason?: string): Promise<void> {
+  const table = tableForSource[source];
+  if (!table) return;
+  const { error } = await supabase
+    .from(table)
+    .update({ dismissed: true, dismissed_reason: reason || null })
+    .eq('id', id);
+  if (error) console.error('dismissContact:', error);
+}
+
+export async function restoreContact(id: string, source: ContactSource): Promise<void> {
+  const table = tableForSource[source];
+  if (!table) return;
+  const { error } = await supabase
+    .from(table)
+    .update({ dismissed: false, dismissed_reason: null })
+    .eq('id', id);
+  if (error) console.error('restoreContact:', error);
 }
 
 // ============ VOICE SAMPLES ============

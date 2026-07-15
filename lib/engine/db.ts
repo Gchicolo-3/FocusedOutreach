@@ -71,6 +71,8 @@ export async function getBrokersDueForTouch() {
     // NULL (unclassified or low-confidence) still flows through — a .neq
     // filter would silently drop NULL rows too.
     .or('qualified.is.null,qualified.eq.true')
+    // Manual "not a fit" gate: exclude only explicit dismissed=true.
+    .or('dismissed.is.null,dismissed.eq.false')
     .order('tier', { ascending: true });
 
   if (error) throw new Error(`getBrokersDueForTouch: ${error.message}`);
@@ -87,6 +89,7 @@ export async function getPartnersDueForTouch() {
     .select('*')
     .neq('tier', 'D')
     .or('qualified.is.null,qualified.eq.true')
+    .or('dismissed.is.null,dismissed.eq.false')
     .order('tier', { ascending: true });
 
   if (error) throw new Error(`getPartnersDueForTouch: ${error.message}`);
