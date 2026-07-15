@@ -33,7 +33,7 @@ export async function getProspects(): Promise<Lead[]> {
     subject: r.subject, activityType: r.activity_type, date: r.date,
     status: r.status, priority: r.priority, comments: r.comments,
     tier: r.tier, broker: r.broker, channel: r.channel,
-    lastTouch: r.last_touch, email: r.email, phone: r.phone,
+    lastTouch: r.last_touch, nextDue: r.next_due, email: r.email, phone: r.phone,
     dismissed: r.dismissed ?? false,
   }));
 }
@@ -278,6 +278,23 @@ export async function restoreContact(id: string, source: ContactSource): Promise
     .update({ dismissed: false, dismissed_reason: null })
     .eq('id', id);
   if (error) console.error('restoreContact:', error);
+}
+
+// Schedule the next follow-up (sets next_due, YYYY-MM-DD). Due prospect
+// follow-ups surface at the top of Do This Now.
+export async function setFollowUp(id: string, source: ContactSource, dateISO: string): Promise<void> {
+  const table = tableForSource[source];
+  if (!table) return;
+  const { error } = await supabase.from(table).update({ next_due: dateISO }).eq('id', id);
+  if (error) console.error('setFollowUp:', error);
+}
+
+// Clear a scheduled follow-up (removes it from the "due" list in Do This Now).
+export async function clearFollowUp(id: string, source: ContactSource): Promise<void> {
+  const table = tableForSource[source];
+  if (!table) return;
+  const { error } = await supabase.from(table).update({ next_due: null }).eq('id', id);
+  if (error) console.error('clearFollowUp:', error);
 }
 
 // ============ ENGINE DRAFTS (review queue) ============

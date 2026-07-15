@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { generateMessage, GenerateChannel } from '@/lib/toneProfile';
 import { openInMessages, composeInOutlook, startCall } from '@/lib/sendActions';
-import { saveVoiceSample } from '@/lib/storage';
+import { saveVoiceSample, setFollowUp, type ContactSource } from '@/lib/storage';
 import { C, F, labelMono, inputBase } from '@/lib/design';
 
 type MessageCardProps = {
@@ -18,6 +18,8 @@ type MessageCardProps = {
   broker?: string;
   opportunity?: string;
   lastTouch?: string;
+  contactId?: string;
+  contactSource?: ContactSource;
 };
 
 export default function MessageCard({
@@ -32,6 +34,8 @@ export default function MessageCard({
   broker,
   opportunity,
   lastTouch,
+  contactId,
+  contactSource,
 }: MessageCardProps) {
   const [activeChannel, setActiveChannel] = useState<GenerateChannel>(initialChannel);
   const [purpose, setPurpose] = useState('');
@@ -42,6 +46,7 @@ export default function MessageCard({
   const [savedVoice, setSavedVoice] = useState(false);
   const [phoneInput, setPhoneInput] = useState(phone || '');
   const [showPhoneInput, setShowPhoneInput] = useState(false);
+  const [followUpSet, setFollowUpSet] = useState('');
   const [error, setError] = useState('');
 
   const firstName = contactName.split(' ')[0];
@@ -133,6 +138,18 @@ export default function MessageCard({
     await saveVoiceSample(activeChannel, full);
     setSavedVoice(true);
     setTimeout(() => setSavedVoice(false), 2500);
+  }
+
+  // Sets a next-follow-up date N days out on this contact's source row.
+  // Due follow-ups then surface at the top of Do This Now.
+  async function scheduleFollowUp(days: number, label: string) {
+    if (!contactId || !contactSource) return;
+    const due = new Date();
+    due.setDate(due.getDate() + days);
+    const iso = due.toISOString().slice(0, 10);
+    await setFollowUp(contactId, contactSource, iso);
+    setFollowUpSet(label);
+    setTimeout(() => setFollowUpSet(''), 2500);
   }
 
   const actionBtn = (opts: {
@@ -300,6 +317,30 @@ export default function MessageCard({
             border: 'rgba(74,176,255,0.2)',
           })}
       </div>
+
+      {contactId && contactSource && (
+        <div
+          style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}
+        >
+          <span style={{ ...labelMono }}>
+            {followUpSet ? `✓ Follow up in ${followUpSet}` : 'Follow up:'}
+          </span>
+          {!followUpSet &&
+            [
+              { days: 3, label: '3d' },
+              { days: 7, label: '1w' },
+              { days: 14, label: '2w' },
+            ].map((f) =>
+              actionBtn({
+                onClick: () => scheduleFollowUp(f.days, f.label),
+                label: f.label,
+                bg: C.surface2,
+                color: C.muted,
+                border: C.border,
+              })
+            )}
+        </div>
+      )}
 
       {error && (
         <div

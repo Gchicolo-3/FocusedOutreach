@@ -23,6 +23,7 @@ export type Lead = {
   broker?: string;
   channel: Channel;
   lastTouch?: string;
+  nextDue?: string;
   email?: string;
   phone?: string;
   dismissed?: boolean;
