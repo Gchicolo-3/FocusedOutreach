@@ -289,32 +289,35 @@ export default function MessageCard({
           border: savedVoice ? 'rgba(200,240,74,0.3)' : C.border,
         })}
 
-        {activeChannel === 'text' &&
-          actionBtn({
-            onClick: handleSendText,
-            label: '📱 Open in Messages',
-            bg: 'rgba(255,201,74,0.08)',
-            color: C.amber,
-            border: 'rgba(255,201,74,0.25)',
-          })}
-
-        {activeChannel === 'call' &&
-          actionBtn({
-            onClick: handleCall,
-            label: '📞 Call',
-            bg: 'rgba(200,240,74,0.1)',
-            color: C.accent,
-            border: 'rgba(200,240,74,0.3)',
-          })}
-
-        {activeChannel === 'email' &&
-          email &&
+        {/* Send options follow the contact, not the channel tab: Outlook shows
+            whenever there's an email, Text/Call whenever there's a phone (or the
+            tab is text/call, so you can still enter one). This stops the Outlook
+            button from vanishing when a card opens on a non-email channel. */}
+        {email &&
           actionBtn({
             onClick: handleSendEmail,
             label: '✉️ Open in Outlook',
             bg: 'rgba(74,176,255,0.08)',
             color: C.blue,
             border: 'rgba(74,176,255,0.2)',
+          })}
+
+        {(phone || phoneInput || activeChannel === 'text') &&
+          actionBtn({
+            onClick: handleSendText,
+            label: '📱 Text',
+            bg: 'rgba(255,201,74,0.08)',
+            color: C.amber,
+            border: 'rgba(255,201,74,0.25)',
+          })}
+
+        {(phone || phoneInput || activeChannel === 'call') &&
+          actionBtn({
+            onClick: handleCall,
+            label: '📞 Call',
+            bg: 'rgba(200,240,74,0.1)',
+            color: C.accent,
+            border: 'rgba(200,240,74,0.3)',
           })}
       </div>
 
