@@ -5,6 +5,7 @@ import { C, F } from '@/lib/design';
 const tabs = [
   { id: 'do-this-now', label: 'Do This Now' },
   { id: 'contacts', label: 'Contacts' },
+  { id: 'drafts', label: 'Drafts' },
   { id: 'broker-engine', label: 'Broker Engine' },
   { id: 'referral-partners', label: 'Referral Partners' },
   { id: 'text-launcher', label: 'Text Launcher' },

@@ -280,6 +280,54 @@ export async function restoreContact(id: string, source: ContactSource): Promise
   if (error) console.error('restoreContact:', error);
 }
 
+// ============ ENGINE DRAFTS (review queue) ============
+export type EngineDraft = {
+  id: string;
+  contactId: string | null;
+  contactTable: string | null;
+  contactName: string | null;
+  contactCompany: string | null;
+  channel: string;
+  subject: string | null;
+  body: string;
+  draftType: string | null;
+  signalSummary: string | null;
+};
+
+// Pending drafts the engine generated, for the review queue. edited_body wins
+// if George already tweaked it.
+export async function getPendingEngineDrafts(limit = 60): Promise<EngineDraft[]> {
+  const { data, error } = await supabase
+    .from('drafts')
+    .select('*')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) { console.error('getPendingEngineDrafts:', error); return []; }
+  return (data || []).map((r) => ({
+    id: r.id,
+    contactId: r.contact_id,
+    contactTable: r.contact_table,
+    contactName: r.contact_name,
+    contactCompany: r.contact_company,
+    channel: r.channel,
+    subject: r.subject,
+    body: r.edited_body || r.body,
+    draftType: r.draft_type,
+    signalSummary: r.signal_summary,
+  }));
+}
+
+export async function setEngineDraftStatus(
+  id: string,
+  status: 'approved' | 'edited' | 'killed' | 'sent'
+): Promise<void> {
+  const update: Record<string, unknown> = { status };
+  if (status === 'sent') update.sent_at = new Date().toISOString();
+  const { error } = await supabase.from('drafts').update(update).eq('id', id);
+  if (error) console.error('setEngineDraftStatus:', error);
+}
+
 // ============ VOICE SAMPLES ============
 export type VoiceSample = { id: string; channel: string | null; text: string };
 
