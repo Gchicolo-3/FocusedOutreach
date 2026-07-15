@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { generateMessage } from '@/lib/toneProfile';
 import { composeInOutlook } from '@/lib/sendActions';
-import { logActivity } from '@/lib/storage';
+import { logActivity, saveVoiceSample } from '@/lib/storage';
 import { C, F, labelMono, btnPrimary, btnSecondary, inputBase } from '@/lib/design';
 
 type InlineComposeProps = {
@@ -40,6 +40,15 @@ export default function InlineCompose({
   const [error, setError] = useState('');
   const [logging, setLogging] = useState(false);
   const [logged, setLogged] = useState(false);
+  const [savedVoice, setSavedVoice] = useState(false);
+
+  async function handleSaveVoice() {
+    const full = subject ? `Subject: ${subject}\n\n${body}` : body;
+    if (!full.trim()) return;
+    await saveVoiceSample('email', full);
+    setSavedVoice(true);
+    setTimeout(() => setSavedVoice(false), 2500);
+  }
 
   function toggleTag(tag: string) {
     setTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
@@ -239,6 +248,9 @@ export default function InlineCompose({
               style={{ ...btnSecondary, opacity: logging ? 0.6 : 1 }}
             >
               {logging ? 'Logging…' : logged ? '✓ Logged' : 'Log activity'}
+            </button>
+            <button onClick={handleSaveVoice} style={btnSecondary}>
+              {savedVoice ? '✓ Saved to my voice' : '＋ Save as my voice'}
             </button>
             {logged && (
               <span style={{ ...labelMono, color: C.accent }}>

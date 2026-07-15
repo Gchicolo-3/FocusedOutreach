@@ -110,6 +110,13 @@ OUTPUT FORMAT:
 - For text/call/linkedin: output only the message body. No preamble, no explanation, no "Here's a text:". Just the message.
 - For email: output "Subject: [short subject line]" on the first line, then a blank line, then the email body. Subject line should be short and specific like "Quick intro" or "Coffee?" or "[Broker] suggested I reach out". Never "Reaching out from Focus Studio" style corporate subjects.
 
+FINAL CHECK BEFORE YOU OUTPUT (do this silently, show only the result):
+Reread your draft as George would say it out loud. If any line sounds like a
+template, like AI, like a salesperson, or like something George would never
+actually say, rewrite it. Cut every filler word. If a real sample of George's
+writing was provided, your draft must sound like the same person wrote it. Then
+output only the final message, nothing else.
+
 When in doubt, make it shorter and more casual. George's signature move is keeping it real.`;
 
 export type GenerateChannel = 'text' | 'email' | 'linkedin' | 'call';

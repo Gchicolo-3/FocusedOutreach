@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { generateMessage, GenerateChannel } from '@/lib/toneProfile';
 import { openInMessages, composeInOutlook, startCall } from '@/lib/sendActions';
+import { saveVoiceSample } from '@/lib/storage';
 import { C, F, labelMono, inputBase } from '@/lib/design';
 
 type MessageCardProps = {
@@ -38,6 +39,7 @@ export default function MessageCard({
   const [msgSubject, setMsgSubject] = useState(subject || '');
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [savedVoice, setSavedVoice] = useState(false);
   const [phoneInput, setPhoneInput] = useState(phone || '');
   const [showPhoneInput, setShowPhoneInput] = useState(false);
   const [error, setError] = useState('');
@@ -120,6 +122,17 @@ export default function MessageCard({
       return;
     }
     startCall(p);
+  }
+
+  // Saves the current (edited) message as a voice sample. Future generations
+  // use these real messages as few-shot examples to match George's voice.
+  async function handleSaveVoice() {
+    const full =
+      activeChannel === 'email' && msgSubject ? `Subject: ${msgSubject}\n\n${message}` : message;
+    if (!full.trim()) return;
+    await saveVoiceSample(activeChannel, full);
+    setSavedVoice(true);
+    setTimeout(() => setSavedVoice(false), 2500);
   }
 
   const actionBtn = (opts: {
@@ -249,6 +262,14 @@ export default function MessageCard({
           bg: copied ? C.accentBg : C.surface2,
           color: copied ? C.accent : C.muted,
           border: copied ? 'rgba(200,240,74,0.3)' : C.border,
+        })}
+
+        {actionBtn({
+          onClick: handleSaveVoice,
+          label: savedVoice ? '✓ Saved to my voice' : '＋ Save as my voice',
+          bg: savedVoice ? C.accentBg : C.surface2,
+          color: savedVoice ? C.accent : C.muted,
+          border: savedVoice ? 'rgba(200,240,74,0.3)' : C.border,
         })}
 
         {activeChannel === 'text' &&

@@ -248,6 +248,30 @@ export async function unpinToday(id: string): Promise<void> {
   if (error) console.error('unpinToday:', error);
 }
 
+// ============ VOICE SAMPLES ============
+export type VoiceSample = { id: string; channel: string | null; text: string };
+
+// Real messages George has written, used as few-shot examples so generated
+// drafts match his voice. Newest first.
+export async function getVoiceSamples(limit = 8): Promise<VoiceSample[]> {
+  const { data, error } = await supabase
+    .from('voice_samples')
+    .select('id, channel, text')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) { console.error('getVoiceSamples:', error); return []; }
+  return data || [];
+}
+
+export async function saveVoiceSample(channel: string, text: string): Promise<void> {
+  const t = (text || '').trim();
+  if (!t) return;
+  const { error } = await supabase
+    .from('voice_samples')
+    .insert({ channel: channel || null, text: t });
+  if (error) console.error('saveVoiceSample:', error);
+}
+
 // ============ NOTES ============
 export async function getNotes(): Promise<NoteEntry[]> {
   const { data, error } = await supabase.from('notes').select('*');
