@@ -183,6 +183,15 @@ export function selectDaily5(
   const used = new Set<string>();
   const exclude = (id: string) => doneIds.has(id) || snoozedIds.has(id) || used.has(id);
 
+  // Rotate the pool by day so the queue shows different people each day instead
+  // of the same most-overdue faces every time (they only leave once acted on).
+  const dayOffset = Math.floor(Date.now() / 86400000);
+  const rotate = <T,>(arr: T[], off: number): T[] => {
+    if (arr.length === 0) return arr;
+    const k = ((off % arr.length) + arr.length) % arr.length;
+    return [...arr.slice(k), ...arr.slice(0, k)];
+  };
+
   // Sort active brokers by urgency: overdue first, then due_soon, then on_track.
   // Within same status, most days since last touch wins.
   const statusOrder: Record<string, number> = { overdue: 0, due_soon: 1, on_track: 2 };
@@ -195,8 +204,14 @@ export function selectDaily5(
       return daysSince(b.lastTouch) - daysSince(a.lastTouch);
     });
 
+  // Rotate within the actionable pool (overdue + due_soon) so which of the
+  // people-who-need-a-touch surface varies day to day; on_track stay as fallback.
+  const actionable = sortedBrokers.filter((b) => computeStatus(b.lastTouch, b.tier) !== 'on_track');
+  const onTrack = sortedBrokers.filter((b) => computeStatus(b.lastTouch, b.tier) === 'on_track');
+  const rotatedBrokers = [...rotate(actionable, dayOffset * 2), ...onTrack];
+
   // 1) Minimum 2 broker nurture touches
-  for (const b of sortedBrokers) {
+  for (const b of rotatedBrokers) {
     if (tasks.filter((t) => t.source === 'broker').length >= 2) break;
     tasks.push(brokerToTask(b));
     used.add(b.id);
@@ -224,11 +239,13 @@ export function selectDaily5(
     used.add(cold.id);
   }
 
-  // 4) Fill remaining slots with highest-scored candidates until we hit 5
+  // 4) Fill remaining slots with high-scored candidates until we hit 5.
+  // Rotate within the top-scored pool by day + slot so the fillers also vary
+  // day to day rather than always being the same highest-scored people.
   while (tasks.length < 5) {
     const candidates: DailyTask[] = [];
 
-    for (const b of sortedBrokers) {
+    for (const b of rotatedBrokers) {
       if (exclude(b.id)) continue;
       candidates.push(brokerToTask(b));
     }
@@ -243,7 +260,8 @@ export function selectDaily5(
 
     if (candidates.length === 0) break;
     candidates.sort((a, b) => b.score - a.score);
-    const pick = candidates[0];
+    const pool = candidates.slice(0, Math.min(12, candidates.length));
+    const pick = pool[(dayOffset + tasks.length) % pool.length];
     tasks.push(pick);
     used.add(pick.id);
   }
