@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { generateMessage, GenerateChannel } from '@/lib/toneProfile';
-import { openInMessages, openInOutlook } from '@/lib/sendActions';
+import { openInMessages, composeInOutlook, startCall } from '@/lib/sendActions';
+import { saveVoiceSample, setFollowUp, type ContactSource } from '@/lib/storage';
 import { C, F, labelMono, inputBase } from '@/lib/design';
 
 type MessageCardProps = {
@@ -17,6 +18,8 @@ type MessageCardProps = {
   broker?: string;
   opportunity?: string;
   lastTouch?: string;
+  contactId?: string;
+  contactSource?: ContactSource;
 };
 
 export default function MessageCard({
@@ -31,14 +34,19 @@ export default function MessageCard({
   broker,
   opportunity,
   lastTouch,
+  contactId,
+  contactSource,
 }: MessageCardProps) {
   const [activeChannel, setActiveChannel] = useState<GenerateChannel>(initialChannel);
+  const [purpose, setPurpose] = useState('');
   const [message, setMessage] = useState(initialMessage);
   const [msgSubject, setMsgSubject] = useState(subject || '');
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [savedVoice, setSavedVoice] = useState(false);
   const [phoneInput, setPhoneInput] = useState(phone || '');
   const [showPhoneInput, setShowPhoneInput] = useState(false);
+  const [followUpSet, setFollowUpSet] = useState('');
   const [error, setError] = useState('');
 
   const firstName = contactName.split(' ')[0];
@@ -59,6 +67,7 @@ export default function MessageCard({
         contactName,
         company,
         channel: activeChannel,
+        purpose,
         intel,
         broker,
         opportunity,
@@ -108,7 +117,39 @@ export default function MessageCard({
       setError('No email on file');
       return;
     }
-    openInOutlook(email, msgSubject || `Focus Studio — ${firstName}`, message);
+    void composeInOutlook(email, msgSubject || `Focus Studio — ${firstName}`, message);
+  }
+
+  function handleCall() {
+    const p = phoneInput || phone || '';
+    if (!p) {
+      setShowPhoneInput(true);
+      return;
+    }
+    startCall(p);
+  }
+
+  // Saves the current (edited) message as a voice sample. Future generations
+  // use these real messages as few-shot examples to match George's voice.
+  async function handleSaveVoice() {
+    const full =
+      activeChannel === 'email' && msgSubject ? `Subject: ${msgSubject}\n\n${message}` : message;
+    if (!full.trim()) return;
+    await saveVoiceSample(activeChannel, full);
+    setSavedVoice(true);
+    setTimeout(() => setSavedVoice(false), 2500);
+  }
+
+  // Sets a next-follow-up date N days out on this contact's source row.
+  // Due follow-ups then surface at the top of Do This Now.
+  async function scheduleFollowUp(days: number, label: string) {
+    if (!contactId || !contactSource) return;
+    const due = new Date();
+    due.setDate(due.getDate() + days);
+    const iso = due.toISOString().slice(0, 10);
+    await setFollowUp(contactId, contactSource, iso);
+    setFollowUpSet(label);
+    setTimeout(() => setFollowUpSet(''), 2500);
   }
 
   const actionBtn = (opts: {
@@ -182,6 +223,16 @@ export default function MessageCard({
         </div>
       )}
 
+      <div style={{ ...labelMono, marginBottom: 6 }}>
+        What&apos;s this about? — drives the message; notes are just background
+      </div>
+      <input
+        value={purpose}
+        onChange={(e) => setPurpose(e.target.value)}
+        placeholder="e.g. saw the 101 Hudson deal, want to offer a test fit"
+        style={{ ...inputBase, marginBottom: 12 }}
+      />
+
       <div style={{ ...labelMono, marginBottom: 6 }}>Message — edit before sending</div>
       <textarea
         value={message}
@@ -201,9 +252,10 @@ export default function MessageCard({
           {actionBtn({
             onClick: () => {
               setShowPhoneInput(false);
-              openInMessages(phoneInput, message);
+              if (activeChannel === 'call') startCall(phoneInput);
+              else openInMessages(phoneInput, message);
             },
-            label: 'Open Messages',
+            label: activeChannel === 'call' ? 'Call' : 'Open Messages',
             bg: C.amberBg,
             color: C.amber,
             border: 'rgba(255,201,74,0.25)',
@@ -229,17 +281,19 @@ export default function MessageCard({
           border: copied ? 'rgba(200,240,74,0.3)' : C.border,
         })}
 
-        {(activeChannel === 'text' || activeChannel === 'call') &&
-          actionBtn({
-            onClick: handleSendText,
-            label: '📱 Open in Messages',
-            bg: 'rgba(255,201,74,0.08)',
-            color: C.amber,
-            border: 'rgba(255,201,74,0.25)',
-          })}
+        {actionBtn({
+          onClick: handleSaveVoice,
+          label: savedVoice ? '✓ Saved to my voice' : '＋ Save as my voice',
+          bg: savedVoice ? C.accentBg : C.surface2,
+          color: savedVoice ? C.accent : C.muted,
+          border: savedVoice ? 'rgba(200,240,74,0.3)' : C.border,
+        })}
 
-        {activeChannel === 'email' &&
-          email &&
+        {/* Send options follow the contact, not the channel tab: Outlook shows
+            whenever there's an email, Text/Call whenever there's a phone (or the
+            tab is text/call, so you can still enter one). This stops the Outlook
+            button from vanishing when a card opens on a non-email channel. */}
+        {email &&
           actionBtn({
             onClick: handleSendEmail,
             label: '✉️ Open in Outlook',
@@ -247,7 +301,49 @@ export default function MessageCard({
             color: C.blue,
             border: 'rgba(74,176,255,0.2)',
           })}
+
+        {(phone || phoneInput || activeChannel === 'text') &&
+          actionBtn({
+            onClick: handleSendText,
+            label: '📱 Text',
+            bg: 'rgba(255,201,74,0.08)',
+            color: C.amber,
+            border: 'rgba(255,201,74,0.25)',
+          })}
+
+        {(phone || phoneInput || activeChannel === 'call') &&
+          actionBtn({
+            onClick: handleCall,
+            label: '📞 Call',
+            bg: 'rgba(200,240,74,0.1)',
+            color: C.accent,
+            border: 'rgba(200,240,74,0.3)',
+          })}
       </div>
+
+      {contactId && contactSource && (
+        <div
+          style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}
+        >
+          <span style={{ ...labelMono }}>
+            {followUpSet ? `✓ Follow up in ${followUpSet}` : 'Follow up:'}
+          </span>
+          {!followUpSet &&
+            [
+              { days: 3, label: '3d' },
+              { days: 7, label: '1w' },
+              { days: 14, label: '2w' },
+            ].map((f) =>
+              actionBtn({
+                onClick: () => scheduleFollowUp(f.days, f.label),
+                label: f.label,
+                bg: C.surface2,
+                color: C.muted,
+                border: C.border,
+              })
+            )}
+        </div>
+      )}
 
       {error && (
         <div

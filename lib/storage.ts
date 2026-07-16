@@ -7,17 +7,34 @@ import {
 import { computeNextDue, computeStatus } from './cadence';
 export type { ActivityRecord } from './parseCSV';
 import type { ActivityRecord } from './parseCSV';
+import { normalizeContactKey } from './parseCSV';
+
+// Records the last data-load failure so the UI can surface a real error instead
+// of silently rendering an empty dashboard when a Supabase read fails.
+let lastLoadError: string | null = null;
+export function getLastLoadError(): string | null {
+  return lastLoadError;
+}
+export function clearLoadError(): void {
+  lastLoadError = null;
+}
+function noteLoadError(where: string, error: unknown): void {
+  const msg = (error as { message?: string })?.message || String(error);
+  lastLoadError = `${where}: ${msg}`;
+  console.error(where, error);
+}
 
 // ============ PROSPECTS ============
 export async function getProspects(): Promise<Lead[]> {
   const { data, error } = await supabase.from('prospects').select('*');
-  if (error) { console.error(error); return []; }
+  if (error) { noteLoadError('getProspects', error); return []; }
   return (data || []).map(r => ({
     id: r.id, company: r.company, contact: r.contact,
     subject: r.subject, activityType: r.activity_type, date: r.date,
     status: r.status, priority: r.priority, comments: r.comments,
     tier: r.tier, broker: r.broker, channel: r.channel,
-    lastTouch: r.last_touch, email: r.email, phone: r.phone,
+    lastTouch: r.last_touch, nextDue: r.next_due, email: r.email, phone: r.phone,
+    dismissed: r.dismissed ?? false,
   }));
 }
 
@@ -40,14 +57,14 @@ export async function setProspects(leads: Lead[]): Promise<void> {
 // ============ BROKERS ============
 export async function getBrokers(): Promise<Broker[]> {
   const { data, error } = await supabase.from('brokers').select('*');
-  if (error) { console.error(error); return []; }
+  if (error) { noteLoadError('getBrokers', error); return []; }
   return (data || []).map(r => ({
     id: r.id, firstName: r.first_name, lastName: r.last_name,
     firm: r.firm, title: r.title, email: r.email, phone: r.phone,
     mobile: r.mobile, linkedin: r.linkedin, tier: r.tier,
     dealCount: r.deal_count, dealNames: r.deal_names || [],
     lastTouch: r.last_touch, nextDue: r.next_due, notes: r.notes,
-    status: r.status,
+    status: r.status, dismissed: r.dismissed ?? false,
   }));
 }
 
@@ -95,13 +112,13 @@ export async function logBrokerTouch(id: string): Promise<void> {
 // ============ PARTNERS ============
 export async function getPartners(): Promise<Partner[]> {
   const { data, error } = await supabase.from('partners').select('*');
-  if (error) { console.error(error); return []; }
+  if (error) { noteLoadError('getPartners', error); return []; }
   return (data || []).map(r => ({
     id: r.id, firstName: r.first_name, lastName: r.last_name,
     company: r.company, title: r.title, partnerType: r.partner_type,
     tier: r.tier, referralCount: r.referral_count,
     lastTouch: r.last_touch, nextDue: r.next_due, notes: r.notes,
-    email: r.email, phone: r.phone,
+    email: r.email, phone: r.phone, dismissed: r.dismissed ?? false,
   }));
 }
 
@@ -144,7 +161,7 @@ export async function logPartnerTouch(id: string): Promise<void> {
 // ============ COLD BROKERS ============
 export async function getColdBrokers(): Promise<ColdBroker[]> {
   const { data, error } = await supabase.from('cold_brokers').select('*');
-  if (error) { console.error(error); return []; }
+  if (error) { noteLoadError('getColdBrokers', error); return []; }
   return data || [];
 }
 
@@ -202,6 +219,154 @@ export async function getTouchLog(): Promise<TouchLogEntry[]> {
 export async function logTouch(id: string, date: string, channel: Channel): Promise<void> {
   const { error } = await supabase.from('touch_log').insert({ contact_id: id, date, channel });
   if (error) console.error(error);
+}
+
+// ============ PINNED (manually added to Today's queue) ============
+export type PinnedEntry = { id: string; date: string; source: string };
+
+// Contacts the user pinned to today's Do This Now queue. One row per contact
+// (PK is id); re-pinning moves it to today, unpinning deletes it.
+export async function getPinnedToday(): Promise<PinnedEntry[]> {
+  const today = new Date().toISOString().split('T')[0];
+  const { data, error } = await supabase
+    .from('pinned_entries')
+    .select('id, date, source')
+    .eq('date', today);
+  if (error) { console.error('getPinnedToday:', error); return []; }
+  return data || [];
+}
+
+export async function pinToToday(id: string, source: string): Promise<void> {
+  const today = new Date().toISOString().split('T')[0];
+  const { error } = await supabase
+    .from('pinned_entries')
+    .upsert({ id, date: today, source });
+  if (error) console.error('pinToToday:', error);
+}
+
+export async function unpinToday(id: string): Promise<void> {
+  const { error } = await supabase.from('pinned_entries').delete().eq('id', id);
+  if (error) console.error('unpinToday:', error);
+}
+
+// ============ DISMISSED (manually marked not a fit) ============
+export type ContactSource = 'broker' | 'partner' | 'prospect' | 'cold_broker';
+const tableForSource: Record<ContactSource, string> = {
+  broker: 'brokers',
+  partner: 'partners',
+  prospect: 'prospects',
+  cold_broker: 'cold_brokers',
+};
+
+// Mark a contact "not a fit" — drops them from the cadence engine, Do This Now,
+// and the default Contacts view. Reversible via restoreContact.
+export async function dismissContact(id: string, source: ContactSource, reason?: string): Promise<void> {
+  const table = tableForSource[source];
+  if (!table) return;
+  const { error } = await supabase
+    .from(table)
+    .update({ dismissed: true, dismissed_reason: reason || null })
+    .eq('id', id);
+  if (error) console.error('dismissContact:', error);
+}
+
+export async function restoreContact(id: string, source: ContactSource): Promise<void> {
+  const table = tableForSource[source];
+  if (!table) return;
+  const { error } = await supabase
+    .from(table)
+    .update({ dismissed: false, dismissed_reason: null })
+    .eq('id', id);
+  if (error) console.error('restoreContact:', error);
+}
+
+// Schedule the next follow-up (sets next_due, YYYY-MM-DD). Due prospect
+// follow-ups surface at the top of Do This Now.
+export async function setFollowUp(id: string, source: ContactSource, dateISO: string): Promise<void> {
+  const table = tableForSource[source];
+  if (!table) return;
+  const { error } = await supabase.from(table).update({ next_due: dateISO }).eq('id', id);
+  if (error) console.error('setFollowUp:', error);
+}
+
+// Clear a scheduled follow-up (removes it from the "due" list in Do This Now).
+export async function clearFollowUp(id: string, source: ContactSource): Promise<void> {
+  const table = tableForSource[source];
+  if (!table) return;
+  const { error } = await supabase.from(table).update({ next_due: null }).eq('id', id);
+  if (error) console.error('clearFollowUp:', error);
+}
+
+// ============ ENGINE DRAFTS (review queue) ============
+export type EngineDraft = {
+  id: string;
+  contactId: string | null;
+  contactTable: string | null;
+  contactName: string | null;
+  contactCompany: string | null;
+  channel: string;
+  subject: string | null;
+  body: string;
+  draftType: string | null;
+  signalSummary: string | null;
+};
+
+// Pending drafts the engine generated, for the review queue. edited_body wins
+// if George already tweaked it.
+export async function getPendingEngineDrafts(limit = 60): Promise<EngineDraft[]> {
+  const { data, error } = await supabase
+    .from('drafts')
+    .select('*')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) { console.error('getPendingEngineDrafts:', error); return []; }
+  return (data || []).map((r) => ({
+    id: r.id,
+    contactId: r.contact_id,
+    contactTable: r.contact_table,
+    contactName: r.contact_name,
+    contactCompany: r.contact_company,
+    channel: r.channel,
+    subject: r.subject,
+    body: r.edited_body || r.body,
+    draftType: r.draft_type,
+    signalSummary: r.signal_summary,
+  }));
+}
+
+export async function setEngineDraftStatus(
+  id: string,
+  status: 'approved' | 'edited' | 'killed' | 'sent'
+): Promise<void> {
+  const update: Record<string, unknown> = { status };
+  if (status === 'sent') update.sent_at = new Date().toISOString();
+  const { error } = await supabase.from('drafts').update(update).eq('id', id);
+  if (error) console.error('setEngineDraftStatus:', error);
+}
+
+// ============ VOICE SAMPLES ============
+export type VoiceSample = { id: string; channel: string | null; text: string };
+
+// Real messages George has written, used as few-shot examples so generated
+// drafts match his voice. Newest first.
+export async function getVoiceSamples(limit = 8): Promise<VoiceSample[]> {
+  const { data, error } = await supabase
+    .from('voice_samples')
+    .select('id, channel, text')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) { console.error('getVoiceSamples:', error); return []; }
+  return data || [];
+}
+
+export async function saveVoiceSample(channel: string, text: string): Promise<void> {
+  const t = (text || '').trim();
+  if (!t) return;
+  const { error } = await supabase
+    .from('voice_samples')
+    .insert({ channel: channel || null, text: t });
+  if (error) console.error('saveVoiceSample:', error);
 }
 
 // ============ NOTES ============
@@ -295,6 +460,55 @@ export async function mergeActivities(
   }
   await setActivities(merged);
   return merged;
+}
+
+// Logs a single outreach activity for a broker/partner and resets their
+// cadence (lastTouch -> today, which recomputes nextDue + status, and appends
+// to touch_log). Upserts one row in `activities` keyed by the contact's
+// normalized name, merging comments with any existing row for that contact.
+export async function logActivity(params: {
+  contactId: string;
+  contactType: 'broker' | 'partner';
+  fullName: string;
+  company: string;
+  subject: string;
+  comments: string;
+  activityType?: string;
+}): Promise<void> {
+  const today = new Date().toISOString().split('T')[0];
+  const key = normalizeContactKey(params.fullName);
+
+  if (key) {
+    const { data: existing } = await supabase
+      .from('activities')
+      .select('comments, priority')
+      .eq('contact_key', key)
+      .maybeSingle();
+
+    const mergedComments = [existing?.comments, params.comments]
+      .filter(Boolean)
+      .join(' | ');
+
+    const { error } = await supabase.from('activities').upsert({
+      contact_key: key,
+      full_name: params.fullName,
+      company: params.company,
+      subject: params.subject,
+      activity_type: params.activityType || 'Email',
+      date: today,
+      status: 'logged',
+      priority: existing?.priority || '',
+      comments: mergedComments,
+    });
+    if (error) console.error('logActivity error:', error);
+  }
+
+  // Reset cadence for the underlying contact.
+  if (params.contactType === 'broker') {
+    await logBrokerTouch(params.contactId);
+  } else {
+    await logPartnerTouch(params.contactId);
+  }
 }
 
 // ============ TEXT SENT ============

@@ -92,7 +92,10 @@ function getWeekIndex(lastTouch: string): number {
   const d = new Date(lastTouch);
   if (isNaN(d.getTime())) return 0;
   const weeks = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24 * 7));
-  return weeks;
+  // A future lastTouch yields negative weeks; `weeks % 4` would then be a
+  // negative array index (undefined template -> ".replace of undefined" crash
+  // that took down the whole contact queue). Clamp so it never goes negative.
+  return Math.max(0, weeks);
 }
 
 export function getBrokerNurtureText(broker: Broker): string {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { DailyTask } from '@/types';
+import { DailyTask, Lead } from '@/types';
 import {
   getProspects,
   getBrokers,
@@ -11,10 +11,15 @@ import {
   getSnoozed,
   markDone,
   snoozeLead,
+  getPinnedToday,
+  unpinToday,
+  clearFollowUp,
   initDefaultBrokers,
   initDefaultColdBrokers,
+  getLastLoadError,
+  clearLoadError,
 } from '@/lib/storage';
-import { selectDaily5 } from '@/lib/prioritize';
+import { selectDaily5, buildTasksFromPins } from '@/lib/prioritize';
 import { C, F, labelMono, btnSecondary, btnGhost, pillStyle } from '@/lib/design';
 import MessageCard from '@/components/MessageCard';
 
@@ -52,8 +57,11 @@ function motivational(done: number, total: number): string {
 
 export default function DoThisNow() {
   const [tasks, setTasks] = useState<DailyTask[]>([]);
+  const [followUps, setFollowUps] = useState<Lead[]>([]);
   const [doneIds, setDoneIds] = useState<Set<string>>(new Set());
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -65,18 +73,56 @@ export default function DoThisNow() {
 
   async function loadTasks() {
     const today = new Date().toISOString().split('T')[0];
-    const [doneAll, snoozedAll, prospects, brokers, partners, coldBrokers] = await Promise.all([
-      getDone(),
-      getSnoozed(),
-      getProspects(),
-      getBrokers(),
-      getPartners(),
-      getColdBrokers(),
-    ]);
-    const done = doneAll.filter((d) => d.date === today).map((d) => d.id);
-    const snoozed = snoozedAll.filter((s) => s.until > today).map((s) => s.id);
-    setDoneIds(new Set(done));
-    setTasks(selectDaily5(prospects, brokers, partners, coldBrokers, new Set(done), new Set(snoozed)));
+    clearLoadError();
+    try {
+      const [doneAll, snoozedAll, prospects, brokers, partners, coldBrokers, pinned] =
+        await Promise.all([
+          getDone(),
+          getSnoozed(),
+          getProspects(),
+          getBrokers(),
+          getPartners(),
+          getColdBrokers(),
+          getPinnedToday(),
+        ]);
+      const done = doneAll.filter((d) => d.date === today).map((d) => d.id);
+      const snoozed = snoozedAll.filter((s) => s.until > today).map((s) => s.id);
+      setDoneIds(new Set(done));
+
+      // Drop anyone marked "not a fit" before selection.
+      const activeBrokers = brokers.filter((b) => !b.dismissed);
+      const activePartners = partners.filter((p) => !p.dismissed);
+      const activeProspects = prospects.filter((p) => !p.dismissed);
+      const activeCold = coldBrokers.filter((c) => !c.dismissed);
+
+      // Prospects the user scheduled a follow-up for, now due (next_due <= today).
+      // These are hand-set reminders, so they lead the day.
+      setFollowUps(
+        activeProspects
+          .filter((p) => p.nextDue && p.nextDue <= today)
+          .sort((a, b) => (a.nextDue || '').localeCompare(b.nextDue || ''))
+      );
+
+      // Contacts the user hand-picked into today go first; the algorithmic
+      // daily 5 fills in behind them, minus anyone already pinned.
+      const pinnedTasks = buildTasksFromPins(pinned, activeProspects, activeBrokers, activePartners, activeCold);
+      const pinnedIdSet = new Set(pinnedTasks.map((t) => t.id));
+      setPinnedIds(pinnedIdSet);
+      const daily = selectDaily5(
+        activeProspects,
+        activeBrokers,
+        activePartners,
+        activeCold,
+        new Set(done),
+        new Set(snoozed)
+      ).filter((t) => !pinnedIdSet.has(t.id));
+      setTasks([...pinnedTasks, ...daily]);
+      // Surface a silently-swallowed Supabase read failure (e.g. the queue is
+      // empty because contacts failed to load, not because there's no work).
+      setLoadError(getLastLoadError());
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : 'Failed to load contacts');
+    }
   }
 
   async function handleDone(id: string) {
@@ -90,10 +136,42 @@ export default function DoThisNow() {
     setTasks((prev) => prev.filter((t) => t.id !== id));
   }
 
+  async function handleClearFollowUp(id: string) {
+    await clearFollowUp(id, 'prospect');
+    setFollowUps((prev) => prev.filter((f) => f.id !== id));
+  }
+
+  async function handleUnpin(id: string) {
+    await unpinToday(id);
+    setPinnedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    await loadTasks();
+  }
+
   const doneCount = tasks.filter((t) => doneIds.has(t.id)).length;
 
   return (
     <div className="flex flex-col gap-4">
+      {loadError && (
+        <div
+          className="fade-up"
+          style={{
+            background: C.redBg,
+            border: `1px solid ${C.red}`,
+            borderRadius: 12,
+            padding: '12px 16px',
+            color: C.red,
+            fontSize: 13,
+            lineHeight: 1.5,
+          }}
+        >
+          Couldn&apos;t load contacts: {loadError}. Check your connection and refresh — the
+          queue can&apos;t populate until contacts load.
+        </div>
+      )}
       <div
         style={{
           background: C.surface,
@@ -125,6 +203,72 @@ export default function DoThisNow() {
           />
         </div>
       </div>
+
+      {followUps.length > 0 && (
+        <div className="flex flex-col gap-3 fade-up">
+          <div className="flex items-center gap-2">
+            <span style={{ fontFamily: F.display, fontSize: 15, fontWeight: 700, color: C.text }}>
+              Follow-ups due
+            </span>
+            <span style={pillStyle('amber')}>{followUps.length}</span>
+          </div>
+          {followUps.map((f) => {
+            const key = `fu:${f.id}`;
+            const isExpanded = expanded === key;
+            const due = f.nextDue && f.nextDue < new Date().toISOString().split('T')[0];
+            return (
+              <div
+                key={key}
+                style={{
+                  background: C.surface,
+                  border: `1px solid ${isExpanded ? C.border2 : 'rgba(255,201,74,0.25)'}`,
+                  borderRadius: 14,
+                  overflow: 'hidden',
+                }}
+              >
+                <button
+                  onClick={() => setExpanded(isExpanded ? null : key)}
+                  style={{ width: '100%', padding: '16px 20px', textAlign: 'left' }}
+                >
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap" style={{ minWidth: 0 }}>
+                      <span style={{ fontFamily: F.display, fontWeight: 600, fontSize: 15, color: C.text }}>
+                        {f.contact || f.company}
+                      </span>
+                      <span style={{ ...labelMono, color: C.muted2 }}>·</span>
+                      <span style={labelMono}>{f.company}</span>
+                    </div>
+                    <span style={pillStyle(due ? 'amber' : 'accent')}>
+                      {due ? `Overdue · ${f.nextDue}` : `Due today`}
+                    </span>
+                  </div>
+                </button>
+                {isExpanded && (
+                  <div style={{ padding: '0 20px 20px', borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
+                    <MessageCard
+                      contactName={f.contact || f.company}
+                      company={f.company}
+                      email={f.email}
+                      phone={f.phone}
+                      channel={(f.channel as MsgChannel) || 'email'}
+                      initialMessage=""
+                      intel={f.comments}
+                      lastTouch={f.lastTouch}
+                      contactId={f.id}
+                      contactSource="prospect"
+                    />
+                    <div className="flex gap-2 flex-wrap" style={{ marginTop: 16 }}>
+                      <button onClick={() => handleClearFollowUp(f.id)} style={btnSecondary}>
+                        ✓ Done — clear reminder
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {tasks.length === 0 && (
         <div
@@ -186,6 +330,7 @@ export default function DoThisNow() {
                     <span style={labelMono}>{task.company}</span>
                   </div>
                   <div className="flex gap-1.5 mt-2 flex-wrap">
+                    {pinnedIds.has(task.id) && <span style={pillStyle('accent')}>📌 Pinned</span>}
                     <span style={pillStyle(sourcePill[task.source])}>{sourceDisplayLabel[task.source]}</span>
                     <span style={pillStyle(channelPill[task.channel])}>{task.channel}</span>
                     <span style={pillStyle('muted')}>{task.label}</span>
@@ -226,6 +371,8 @@ export default function DoThisNow() {
                   intel={task.intel || task.context}
                   broker={task.broker}
                   lastTouch={task.lastTouch}
+                  contactId={task.id}
+                  contactSource={task.source}
                 />
                 <div className="flex gap-2 flex-wrap" style={{ marginTop: 16 }}>
                   <button
@@ -235,9 +382,15 @@ export default function DoThisNow() {
                   >
                     Mark done
                   </button>
-                  <button onClick={() => handleSnooze(task.id)} style={btnGhost}>
-                    Snooze 2 days
-                  </button>
+                  {pinnedIds.has(task.id) ? (
+                    <button onClick={() => handleUnpin(task.id)} style={btnGhost}>
+                      Unpin
+                    </button>
+                  ) : (
+                    <button onClick={() => handleSnooze(task.id)} style={btnGhost}>
+                      Snooze 2 days
+                    </button>
+                  )}
                 </div>
               </div>
             )}

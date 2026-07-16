@@ -2,7 +2,7 @@
 // Scores each signal against the Focus Studio ICP
 // Routes to actionable queue or watchlist
 
-import { findBrokerByFirmOrName, updateSignalStatus, addToWatchlist } from './db';
+import { findBrokerForSignal, updateSignalStatus, addToWatchlist } from './db';
 
 const NJ_KEYWORDS = [
   'parsippany', 'florham park', 'morris county', 'bergen county', 'essex county',
@@ -68,9 +68,14 @@ export async function runQualifier(signals: any[]) {
       signal.iq_score = score;
       signal.geography = geography;
 
-      // Try to match to an existing broker
+      // Attach to an existing broker only on a high-confidence match (firm
+      // resembles the signal's company AND the summary names the person).
+      // Unmatched signals keep contact_id null and are treated as cold, which
+      // is the safe default: an ilike-firm-substring match alone used to
+      // attach end-user signals to arbitrary brokers and draft to the wrong
+      // person.
       if (signal.company_name) {
-        const broker = await findBrokerByFirmOrName('', signal.company_name);
+        const broker = await findBrokerForSignal(signal.company_name, signal.summary || '');
         if (broker) {
           signal.contact_id = broker.id;
           signal.contact_table = 'brokers';

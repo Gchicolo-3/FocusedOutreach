@@ -6,8 +6,7 @@
 import {
   getBrokersDueForTouch,
   getPartnersDueForTouch,
-  getRecentActivity,
-  hasOpenTask
+  getRecentlyTouchedContacts
 } from './db';
 
 export type DueContact = {
@@ -32,27 +31,36 @@ export async function runCadenceManager(): Promise<DueContact[]> {
   const today = new Date();
   const results: DueContact[] = [];
 
-  // Pull brokers due for touch
-  const brokers = await getBrokersDueForTouch();
+  // Crossing-over data fetched once for the whole run instead of a query per
+  // contact — the per-contact version was hundreds of round-trips and a large
+  // share of the run's time budget. Recent-touch (touch_log) is the crossing-
+  // over signal; the old "open task" check queried a non-existent
+  // activities.contact_id column against a status the data never sets, so it
+  // was removed rather than kept as dead, throwing code.
+  const [brokers, partners, recentlyTouched] = await Promise.all([
+    getBrokersDueForTouch(),
+    getPartnersDueForTouch(),
+    getRecentlyTouchedContacts()
+  ]);
   console.log(`[CadenceManager] ${brokers.length} brokers due`);
+  console.log(`[CadenceManager] ${partners.length} partners due`);
+
+  const cleared = (contact: { id: string; first_name: string; last_name: string }): boolean => {
+    // Crossing-over check: any recent activity for this contact?
+    const touchedDate = recentlyTouched.get(contact.id);
+    if (touchedDate) {
+      console.log(`[CadenceManager] Skipping ${contact.first_name} ${contact.last_name} — touched ${touchedDate}`);
+      return false;
+    }
+
+    return true;
+  };
 
   for (const broker of brokers) {
+    if (!cleared(broker)) continue;
+
     const dueDate = new Date(broker.next_due);
     const daysOverdue = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
-
-    // Crossing-over check: recent activity by anyone?
-    const recentActivity = await getRecentActivity(broker.id);
-    if (recentActivity) {
-      console.log(`[CadenceManager] Skipping ${broker.first_name} ${broker.last_name} — touched ${recentActivity.date}`);
-      continue;
-    }
-
-    // Open task check
-    const openTask = await hasOpenTask(broker.id);
-    if (openTask) {
-      console.log(`[CadenceManager] Skipping ${broker.first_name} ${broker.last_name} — open task exists`);
-      continue;
-    }
 
     results.push({
       id: broker.id,
@@ -70,19 +78,11 @@ export async function runCadenceManager(): Promise<DueContact[]> {
     });
   }
 
-  // Pull partners due for touch
-  const partners = await getPartnersDueForTouch();
-  console.log(`[CadenceManager] ${partners.length} partners due`);
-
   for (const partner of partners) {
+    if (!cleared(partner)) continue;
+
     const dueDate = new Date(partner.next_due);
     const daysOverdue = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
-
-    const recentActivity = await getRecentActivity(partner.id);
-    if (recentActivity) continue;
-
-    const openTask = await hasOpenTask(partner.id);
-    if (openTask) continue;
 
     results.push({
       id: partner.id,

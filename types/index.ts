@@ -23,8 +23,10 @@ export type Lead = {
   broker?: string;
   channel: Channel;
   lastTouch?: string;
+  nextDue?: string;
   email?: string;
   phone?: string;
+  dismissed?: boolean;
 };
 
 export type Broker = {
@@ -44,6 +46,7 @@ export type Broker = {
   nextDue: string;
   notes: string;
   status: 'overdue' | 'due_soon' | 'on_track';
+  dismissed?: boolean;
 };
 
 export type Partner = {
@@ -60,6 +63,7 @@ export type Partner = {
   notes: string;
   email?: string;
   phone?: string;
+  dismissed?: boolean;
 };
 
 export type ColdBroker = {
@@ -72,6 +76,7 @@ export type ColdBroker = {
   mobile?: string;
   linkedin?: string;
   status: 'new' | 'outreach_sent' | 'connected' | 'active_broker';
+  dismissed?: boolean;
 };
 
 export type UncategorizedContact = {
