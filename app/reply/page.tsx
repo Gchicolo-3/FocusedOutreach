@@ -19,6 +19,7 @@ type HistoryRow = {
   mode: ReplyMode;
   incoming_email: string;
   generated_reply: string;
+  edited_reply: string | null;
   created_at: string;
 };
 
@@ -61,7 +62,12 @@ export default function ReplyPage() {
   const [threadContext, setThreadContext] = useState('');
   const [showContext, setShowContext] = useState(false);
   const [reply, setReply] = useState('');
+  // What the model last returned, to detect hand edits, and the history row id
+  // so a review pass lands on the right record.
+  const [lastGenerated, setLastGenerated] = useState('');
+  const [replyId, setReplyId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const [error, setError] = useState('');
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [showHistory, setShowHistory] = useState(false);
@@ -83,7 +89,7 @@ export default function ReplyPage() {
   async function loadHistory() {
     const { data, error: err } = await supabase
       .from('reply_drafts')
-      .select('id, mode, incoming_email, generated_reply, created_at')
+      .select('id, mode, incoming_email, generated_reply, edited_reply, created_at')
       .order('created_at', { ascending: false })
       .limit(25);
     if (err) {
@@ -110,11 +116,43 @@ export default function ReplyPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
       setReply(data.generatedReply);
+      setLastGenerated(data.generatedReply);
+      setReplyId(data.id || null);
       loadHistory();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
     } finally {
       setGenerating(false);
+    }
+  }
+
+  // Run George's hand-edited draft back through the model to verify it against
+  // the voice rules. Keeps his changes, fixes only real problems.
+  async function reviewEdits() {
+    if (!reply.trim() || reviewing || generating) return;
+    setReviewing(true);
+    setError('');
+    try {
+      const res = await fetch('/api/reply-generator', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode,
+          incomingEmail,
+          threadContext: threadContext.trim() || undefined,
+          editedReply: reply,
+          id: replyId || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      setReply(data.generatedReply);
+      setLastGenerated(data.generatedReply);
+      loadHistory();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Something went wrong');
+    } finally {
+      setReviewing(false);
     }
   }
 
@@ -219,32 +257,47 @@ export default function ReplyPage() {
           </div>
         </div>
 
-        {/* Output */}
-        {reply && (
+        {/* Output — editable so George can tweak lines directly, then run his
+            version back through the model with "Check my edits". */}
+        {(reply || lastGenerated) && (
           <div style={{ ...card, padding: 16 }} className="flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-2">
-              <span style={labelMono}>Reply draft · {modeLabel(mode)}</span>
-              <div className="flex gap-2">
-                <button onClick={generate} disabled={generating} style={btnGhost}>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span style={labelMono}>
+                Reply draft · {modeLabel(mode)} · editable
+              </span>
+              <div className="flex gap-2 flex-wrap">
+                {reply.trim() !== lastGenerated.trim() && (
+                  <button
+                    onClick={reviewEdits}
+                    disabled={reviewing || generating || !reply.trim()}
+                    style={{ ...btnPrimary, opacity: reviewing ? 0.6 : 1 }}
+                  >
+                    {reviewing ? 'Checking…' : 'Check my edits'}
+                  </button>
+                )}
+                <button onClick={generate} disabled={generating || reviewing} style={btnGhost}>
                   {generating ? '…' : 'Regenerate'}
                 </button>
-                <CopyButton text={reply} primary />
+                <CopyButton text={reply} primary={reply.trim() === lastGenerated.trim()} />
               </div>
             </div>
-            <div
+            <textarea
+              value={reply}
+              onChange={(e) => setReply(e.target.value)}
+              rows={Math.min(18, Math.max(6, reply.split('\n').length + 2))}
               style={{
-                background: C.surface2,
-                border: `1px solid ${C.border}`,
-                borderRadius: 8,
-                padding: 14,
-                whiteSpace: 'pre-wrap',
-                fontFamily: F.body,
+                ...textareaStyle,
                 fontSize: 14,
                 lineHeight: 1.6,
+                padding: 14,
               }}
-            >
-              {reply}
-            </div>
+            />
+            {reply.trim() !== lastGenerated.trim() && (
+              <span style={{ color: C.muted, fontSize: 12, fontFamily: F.body }}>
+                You&apos;ve edited this draft. Check my edits runs your version back
+                through the voice rules before you send it.
+              </span>
+            )}
           </div>
         )}
 
@@ -324,7 +377,9 @@ export default function ReplyPage() {
                         >
                           {h.incoming_email}
                         </div>
-                        <div style={{ ...labelMono }}>Reply</div>
+                        <div style={{ ...labelMono }}>
+                          {h.edited_reply ? 'Reply (edited)' : 'Reply'}
+                        </div>
                         <div
                           style={{
                             whiteSpace: 'pre-wrap',
@@ -333,10 +388,10 @@ export default function ReplyPage() {
                             lineHeight: 1.6,
                           }}
                         >
-                          {h.generated_reply}
+                          {h.edited_reply || h.generated_reply}
                         </div>
                         <div>
-                          <CopyButton text={h.generated_reply} />
+                          <CopyButton text={h.edited_reply || h.generated_reply} />
                         </div>
                       </>
                     )}

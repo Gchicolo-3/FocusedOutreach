@@ -123,3 +123,23 @@ const MODE_PROMPTS: Record<ReplyMode, string> = {
 export function replySystemPrompt(mode: ReplyMode): string {
   return MODE_PROMPTS[mode];
 }
+
+// Review pass: George edited the draft by hand and wants it checked, not
+// rewritten. His wording wins unless it breaks a hard rule.
+export function reviewSystemPrompt(mode: ReplyMode): string {
+  return `${MODE_PROMPTS[mode]}
+
+REVIEW MODE. George took a generated draft and edited it himself. The edited
+version below is what he wants to send. Your job is to verify it, not rewrite
+it.
+
+- Keep his wording, structure, and intent. His edits are deliberate.
+- Fix only: typos, grammar slips, banned phrases, em dashes, markdown
+  formatting, a stacked second ask, or anything that clearly violates the
+  rules above.
+- If a line reads fine, leave it exactly as he wrote it, even if you would
+  have phrased it differently.
+- If nothing needs fixing, return his text unchanged.
+- Output the final reply body only, plain text, ready to paste. No notes on
+  what you changed, no commentary.`;
+}

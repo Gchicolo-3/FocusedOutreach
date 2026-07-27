@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { isReplyMode, replySystemPrompt, type ReplyMode } from '@/lib/replyPrompts';
+import { isReplyMode, replySystemPrompt, reviewSystemPrompt, type ReplyMode } from '@/lib/replyPrompts';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -10,6 +10,10 @@ type ReplyRequest = {
   mode: ReplyMode;
   incomingEmail: string;
   threadContext?: string;
+  // Review pass: George's hand-edited draft to verify against the voice rules
+  // instead of generating fresh. `id` ties the result back to the history row.
+  editedReply?: string;
+  id?: string;
 };
 
 // Real messages George has written, same anchor the compose route uses. Email
@@ -67,7 +71,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { mode, incomingEmail, threadContext } = body;
+  const { mode, incomingEmail, threadContext, editedReply, id: rowId } = body;
 
   if (!isReplyMode(mode)) {
     return NextResponse.json(
@@ -78,6 +82,7 @@ export async function POST(req: NextRequest) {
   if (!incomingEmail || !incomingEmail.trim()) {
     return NextResponse.json({ error: 'incomingEmail is required' }, { status: 400 });
   }
+  const isReview = typeof editedReply === 'string' && editedReply.trim().length > 0;
 
   const samples = await fetchVoiceSamples();
   const voiceBlock = samples.length
@@ -109,8 +114,17 @@ export async function POST(req: NextRequest) {
           '--- end thread context ---',
         ].join('\n')
       : '',
-    '',
-    'Write George\'s reply to the incoming email above. Reply body only, plain text.',
+    isReview
+      ? [
+          '',
+          "GEORGE'S EDITED DRAFT, verify this per the review rules:",
+          '--- edited draft ---',
+          editedReply!.trim(),
+          '--- end edited draft ---',
+          '',
+          'Return the final verified reply body only, plain text.',
+        ].join('\n')
+      : "\nWrite George's reply to the incoming email above. Reply body only, plain text.",
   ]
     .filter(Boolean)
     .join('\n');
@@ -121,7 +135,7 @@ export async function POST(req: NextRequest) {
     const response = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
-      system: replySystemPrompt(mode),
+      system: isReview ? reviewSystemPrompt(mode) : replySystemPrompt(mode),
       messages: [{ role: 'user', content: prompt }],
     });
 
@@ -134,27 +148,39 @@ export async function POST(req: NextRequest) {
 
     const generatedReply = sanitizeReply(raw);
 
-    // Save to history. A failed insert shouldn't cost George the reply he just
-    // waited for, so log it and return the text anyway with a null id.
-    let id: string | null = null;
+    // Save to history. A failed write shouldn't cost George the reply he just
+    // waited for, so log it and return the text anyway. A review pass updates
+    // edited_reply on the existing row; a fresh generate inserts a new row.
+    let id: string | null = rowId || null;
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (url && key) {
       const supabase = createClient(url, key);
-      const { data, error } = await supabase
-        .from('reply_drafts')
-        .insert({
-          mode,
-          incoming_email: incomingEmail.trim(),
-          thread_context: context || null,
-          generated_reply: generatedReply,
-        })
-        .select('id')
-        .single();
-      if (error) {
-        console.error('[reply-generator] insert failed:', error.message);
+      if (isReview) {
+        if (rowId) {
+          const { error } = await supabase
+            .from('reply_drafts')
+            .update({ edited_reply: generatedReply })
+            .eq('id', rowId);
+          if (error) console.error('[reply-generator] update failed:', error.message);
+        }
       } else {
-        id = data.id;
+        const { data, error } = await supabase
+          .from('reply_drafts')
+          .insert({
+            mode,
+            incoming_email: incomingEmail.trim(),
+            thread_context: context || null,
+            generated_reply: generatedReply,
+          })
+          .select('id')
+          .single();
+        if (error) {
+          console.error('[reply-generator] insert failed:', error.message);
+          id = null;
+        } else {
+          id = data.id;
+        }
       }
     }
 
