@@ -1,13 +1,21 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { isReplyMode, replySystemPrompt, reviewSystemPrompt, type ReplyMode } from '@/lib/replyPrompts';
+import {
+  isReplyChannel,
+  isReplyMode,
+  replySystemPrompt,
+  reviewSystemPrompt,
+  type ReplyChannel,
+  type ReplyMode,
+} from '@/lib/replyPrompts';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
 type ReplyRequest = {
   mode: ReplyMode;
+  channel?: ReplyChannel; // defaults to email for older clients
   incomingEmail: string;
   threadContext?: string;
   // Review pass: George's hand-edited draft to verify against the voice rules
@@ -16,9 +24,16 @@ type ReplyRequest = {
   id?: string;
 };
 
-// Real messages George has written, same anchor the compose route uses. Email
-// samples only, this tool writes emails.
-async function fetchVoiceSamples(limit = 6): Promise<string[]> {
+// Real messages George has written, same anchor the compose route uses.
+// Prefer samples from the matching voice_samples channel (email/text/linkedin),
+// then fall back to any channel.
+function sampleChannelFor(channel: ReplyChannel): string {
+  if (channel === 'text') return 'text';
+  if (channel === 'linkedin_connect' || channel === 'linkedin_message') return 'linkedin';
+  return 'email';
+}
+
+async function fetchVoiceSamples(channel: ReplyChannel, limit = 6): Promise<string[]> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) return [];
@@ -30,9 +45,10 @@ async function fetchVoiceSamples(limit = 6): Promise<string[]> {
       .order('created_at', { ascending: false })
       .limit(40);
     const rows = data || [];
-    const emails = rows.filter((r) => r.channel === 'email').map((r) => r.text);
-    const others = rows.filter((r) => r.channel !== 'email').map((r) => r.text);
-    return [...emails, ...others].filter(Boolean).slice(0, limit);
+    const wanted = sampleChannelFor(channel);
+    const same = rows.filter((r) => r.channel === wanted).map((r) => r.text);
+    const others = rows.filter((r) => r.channel !== wanted).map((r) => r.text);
+    return [...same, ...others].filter(Boolean).slice(0, limit);
   } catch {
     return [];
   }
@@ -72,10 +88,11 @@ export async function POST(req: NextRequest) {
   }
 
   const { mode, incomingEmail, threadContext, editedReply, id: rowId } = body;
+  const channel: ReplyChannel = isReplyChannel(body.channel) ? body.channel : 'email';
 
   if (!isReplyMode(mode)) {
     return NextResponse.json(
-      { error: 'mode must be one of: cre_referral, prospecting, internal' },
+      { error: 'mode must be one of: cre_referral, broker_prospecting, client_prospecting, internal' },
       { status: 400 }
     );
   }
@@ -84,7 +101,7 @@ export async function POST(req: NextRequest) {
   }
   const isReview = typeof editedReply === 'string' && editedReply.trim().length > 0;
 
-  const samples = await fetchVoiceSamples();
+  const samples = await fetchVoiceSamples(channel);
   const voiceBlock = samples.length
     ? [
         'REAL MESSAGES GEORGE HAS ACTUALLY WRITTEN AND SENT. This is the ground',
@@ -100,10 +117,11 @@ export async function POST(req: NextRequest) {
   const context = (threadContext || '').trim();
   const prompt = [
     voiceBlock,
-    'THE EMAIL GEORGE RECEIVED AND IS REPLYING TO:',
-    '--- incoming email ---',
+    'WHAT GEORGE PASTED IN (a message he received to reply to, or notes on a',
+    'situation for fresh outreach):',
+    '--- pasted content ---',
     incomingEmail.trim(),
-    '--- end incoming email ---',
+    '--- end pasted content ---',
     context
       ? [
           '',
@@ -122,9 +140,9 @@ export async function POST(req: NextRequest) {
           editedReply!.trim(),
           '--- end edited draft ---',
           '',
-          'Return the final verified reply body only, plain text.',
+          'Return the final verified message only, plain text.',
         ].join('\n')
-      : "\nWrite George's reply to the incoming email above. Reply body only, plain text.",
+      : "\nWrite George's message per the channel rules. The message only, plain text.",
   ]
     .filter(Boolean)
     .join('\n');
@@ -135,7 +153,7 @@ export async function POST(req: NextRequest) {
     const response = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
-      system: isReview ? reviewSystemPrompt(mode) : replySystemPrompt(mode),
+      system: isReview ? reviewSystemPrompt(mode, channel) : replySystemPrompt(mode, channel),
       messages: [{ role: 'user', content: prompt }],
     });
 
@@ -169,6 +187,7 @@ export async function POST(req: NextRequest) {
           .from('reply_drafts')
           .insert({
             mode,
+            channel,
             incoming_email: incomingEmail.trim(),
             thread_context: context || null,
             generated_reply: generatedReply,
