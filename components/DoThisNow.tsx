@@ -87,6 +87,9 @@ export default function DoThisNow() {
           getPinnedToday(),
         ]);
       const done = doneAll.filter((d) => d.date === today).map((d) => d.id);
+      // Seed today's done set so a done-but-still-pinned contact stays hidden
+      // after a reload (the daily 5 already excludes done, pins don't).
+      setDoneIds(new Set(done));
       const snoozed = snoozedAll.filter((s) => s.until > today).map((s) => s.id);
       setDoneIds(new Set(done));
 
@@ -135,6 +138,10 @@ export default function DoThisNow() {
     const task = tasks.find((t) => t.id === id);
     if (task) await logTouch(id, today, task.channel);
     setDoneIds((prev) => new Set([...prev, id]));
+    // The card disappears from the queue (doneIds also drives the render
+    // filter below); collapse it first so the next card doesn't inherit an
+    // open state.
+    setExpanded((prev) => (prev === id ? null : prev));
   }
 
   async function handleSnooze(id: string) {
@@ -292,7 +299,7 @@ export default function DoThisNow() {
         </div>
       )}
 
-      {tasks.map((task, idx) => {
+      {tasks.filter((t) => !doneIds.has(t.id)).map((task, idx) => {
         const isDone = doneIds.has(task.id);
         const isExpanded = expanded === task.id;
 
