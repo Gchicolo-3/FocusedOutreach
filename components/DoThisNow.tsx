@@ -18,6 +18,7 @@ import {
   initDefaultColdBrokers,
   getLastLoadError,
   clearLoadError,
+  logTouch,
 } from '@/lib/storage';
 import { selectDaily5, buildTasksFromPins } from '@/lib/prioritize';
 import { C, F, labelMono, btnSecondary, btnGhost, pillStyle } from '@/lib/design';
@@ -128,6 +129,11 @@ export default function DoThisNow() {
   async function handleDone(id: string) {
     const today = new Date().toISOString().split('T')[0];
     await markDone(id, today);
+    // Record an outbound touch so the cadence engine's crossing-over check
+    // stops re-queuing and re-drafting this contact. Without this, marking a
+    // Do This Now item done never reached touch_log.
+    const task = tasks.find((t) => t.id === id);
+    if (task) await logTouch(id, today, task.channel);
     setDoneIds((prev) => new Set([...prev, id]));
   }
 
