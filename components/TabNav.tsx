@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { C, F } from '@/lib/design';
 
 const tabs = [
@@ -61,6 +62,23 @@ export default function TabNav({
             </button>
           );
         })}
+        {/* Separate page, not a tab — same styling so it reads as part of the nav. */}
+        <Link
+          href="/reply"
+          style={{
+            padding: '14px 16px',
+            fontSize: 13,
+            fontFamily: F.body,
+            fontWeight: 400,
+            color: C.muted,
+            borderBottom: '2px solid transparent',
+            whiteSpace: 'nowrap',
+            textDecoration: 'none',
+            marginBottom: -1,
+          }}
+        >
+          Reply Generator ↗
+        </Link>
       </div>
     </nav>
   );

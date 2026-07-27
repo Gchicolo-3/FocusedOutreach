@@ -3,20 +3,32 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import type { ReplyMode } from '@/lib/replyPrompts';
+import type { ReplyChannel, ReplyMode } from '@/lib/replyPrompts';
 import { C, F, labelMono, card, btnPrimary, btnGhost, inputBase, pillStyle } from '@/lib/design';
 
-const MODES: { id: ReplyMode; label: string; pill: 'teal' | 'accent' | 'purple' }[] = [
+type Pill = 'teal' | 'accent' | 'purple' | 'amber' | 'blue' | 'muted';
+
+const MODES: { id: ReplyMode; label: string; pill: Pill }[] = [
   { id: 'cre_referral', label: 'CRE / Referral', pill: 'teal' },
-  { id: 'prospecting', label: 'Prospecting', pill: 'accent' },
+  { id: 'broker_prospecting', label: 'Broker Prospecting', pill: 'accent' },
+  { id: 'client_prospecting', label: 'Client Prospecting', pill: 'amber' },
   { id: 'internal', label: 'Internal', pill: 'purple' },
 ];
 
+const CHANNELS: { id: ReplyChannel; label: string }[] = [
+  { id: 'email', label: 'Email' },
+  { id: 'text', label: 'Text' },
+  { id: 'linkedin_connect', label: 'LinkedIn Connect' },
+  { id: 'linkedin_message', label: 'LinkedIn Message' },
+];
+
 const MODE_STORAGE_KEY = 'reply-generator-mode';
+const CHANNEL_STORAGE_KEY = 'reply-generator-channel';
 
 type HistoryRow = {
   id: string;
   mode: ReplyMode;
+  channel: ReplyChannel;
   incoming_email: string;
   generated_reply: string;
   edited_reply: string | null;
@@ -27,8 +39,12 @@ function modeLabel(mode: ReplyMode): string {
   return MODES.find((m) => m.id === mode)?.label || mode;
 }
 
-function modePill(mode: ReplyMode): 'teal' | 'accent' | 'purple' | 'muted' {
+function modePill(mode: ReplyMode): Pill {
   return MODES.find((m) => m.id === mode)?.pill || 'muted';
+}
+
+function channelLabel(channel: ReplyChannel): string {
+  return CHANNELS.find((c) => c.id === channel)?.label || channel;
 }
 
 // Copy button with its own "Copied" feedback so multiple instances (output box
@@ -56,8 +72,17 @@ const textareaStyle: React.CSSProperties = {
   fontSize: 13,
 };
 
+const selectorBtn = (active: boolean): React.CSSProperties => ({
+  ...btnGhost,
+  background: active ? C.accentBg : 'transparent',
+  borderColor: active ? C.accent : C.border,
+  color: active ? C.accent : C.muted,
+  fontWeight: 600,
+});
+
 export default function ReplyPage() {
   const [mode, setMode] = useState<ReplyMode>('cre_referral');
+  const [channel, setChannel] = useState<ReplyChannel>('email');
   const [incomingEmail, setIncomingEmail] = useState('');
   const [threadContext, setThreadContext] = useState('');
   const [showContext, setShowContext] = useState(false);
@@ -75,8 +100,12 @@ export default function ReplyPage() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem(MODE_STORAGE_KEY);
-    if (saved && MODES.some((m) => m.id === saved)) setMode(saved as ReplyMode);
+    const savedMode = localStorage.getItem(MODE_STORAGE_KEY);
+    if (savedMode && MODES.some((m) => m.id === savedMode)) setMode(savedMode as ReplyMode);
+    const savedChannel = localStorage.getItem(CHANNEL_STORAGE_KEY);
+    if (savedChannel && CHANNELS.some((c) => c.id === savedChannel)) {
+      setChannel(savedChannel as ReplyChannel);
+    }
     setMounted(true);
     loadHistory();
   }, []);
@@ -86,10 +115,15 @@ export default function ReplyPage() {
     localStorage.setItem(MODE_STORAGE_KEY, m);
   }
 
+  function pickChannel(c: ReplyChannel) {
+    setChannel(c);
+    localStorage.setItem(CHANNEL_STORAGE_KEY, c);
+  }
+
   async function loadHistory() {
     const { data, error: err } = await supabase
       .from('reply_drafts')
-      .select('id, mode, incoming_email, generated_reply, edited_reply, created_at')
+      .select('id, mode, channel, incoming_email, generated_reply, edited_reply, created_at')
       .order('created_at', { ascending: false })
       .limit(25);
     if (err) {
@@ -109,6 +143,7 @@ export default function ReplyPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mode,
+          channel,
           incomingEmail,
           threadContext: threadContext.trim() || undefined,
         }),
@@ -138,6 +173,7 @@ export default function ReplyPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mode,
+          channel,
           incomingEmail,
           threadContext: threadContext.trim() || undefined,
           editedReply: reply,
@@ -180,35 +216,45 @@ export default function ReplyPage() {
         className="flex flex-col gap-4 fade-up"
       >
         {/* Mode selector */}
-        <div className="flex gap-2 flex-wrap">
-          {MODES.map((m) => {
-            const active = mode === m.id;
-            return (
-              <button
-                key={m.id}
-                onClick={() => pickMode(m.id)}
-                style={{
-                  ...btnGhost,
-                  background: active ? C.accentBg : 'transparent',
-                  borderColor: active ? C.accent : C.border,
-                  color: active ? C.accent : C.muted,
-                  fontWeight: 600,
-                }}
-              >
+        <div className="flex flex-col gap-2">
+          <span style={labelMono}>Who is this for</span>
+          <div className="flex gap-2 flex-wrap">
+            {MODES.map((m) => (
+              <button key={m.id} onClick={() => pickMode(m.id)} style={selectorBtn(mode === m.id)}>
                 {m.label}
               </button>
-            );
-          })}
+            ))}
+          </div>
         </div>
 
-        {/* Incoming email */}
+        {/* Channel selector */}
+        <div className="flex flex-col gap-2">
+          <span style={labelMono}>Channel</span>
+          <div className="flex gap-2 flex-wrap">
+            {CHANNELS.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => pickChannel(c.id)}
+                style={selectorBtn(channel === c.id)}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Incoming message / situation */}
         <div style={{ ...card, padding: 16 }} className="flex flex-col gap-3">
-          <label style={labelMono}>Paste the email you&apos;re replying to</label>
+          <label style={labelMono}>
+            Paste the email or message you&apos;re replying to, or notes on the situation
+          </label>
           <textarea
             value={incomingEmail}
             onChange={(e) => setIncomingEmail(e.target.value)}
             rows={8}
-            placeholder="Paste the full email here..."
+            placeholder={
+              'Paste the full email or text here...\n\nOr for fresh outreach, describe what you know: "Acme Corp is moving from Hoboken to Jersey City this fall, ~80 people, CFO is Jane Smith."'
+            }
             style={textareaStyle}
           />
 
@@ -263,7 +309,7 @@ export default function ReplyPage() {
           <div style={{ ...card, padding: 16 }} className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <span style={labelMono}>
-                Reply draft · {modeLabel(mode)} · editable
+                Draft · {modeLabel(mode)} · {channelLabel(channel)} · editable
               </span>
               <div className="flex gap-2 flex-wrap">
                 {reply.trim() !== lastGenerated.trim() && (
@@ -325,11 +371,12 @@ export default function ReplyPage() {
           {showHistory &&
             (history.length === 0 ? (
               <div style={{ color: C.muted, fontSize: 13, fontFamily: F.body }}>
-                No replies generated yet.
+                No drafts generated yet.
               </div>
             ) : (
               history.map((h) => {
                 const expanded = expandedId === h.id;
+                const finalText = h.edited_reply || h.generated_reply;
                 return (
                   <div
                     key={h.id}
@@ -360,6 +407,7 @@ export default function ReplyPage() {
                         {h.incoming_email.slice(0, 110)}
                       </span>
                       <span style={pillStyle(modePill(h.mode))}>{modeLabel(h.mode)}</span>
+                      <span style={pillStyle('muted')}>{channelLabel(h.channel)}</span>
                       <span style={labelMono}>{new Date(h.created_at).toLocaleDateString()}</span>
                     </button>
 
@@ -378,7 +426,7 @@ export default function ReplyPage() {
                           {h.incoming_email}
                         </div>
                         <div style={{ ...labelMono }}>
-                          {h.edited_reply ? 'Reply (edited)' : 'Reply'}
+                          {h.edited_reply ? 'Draft (edited)' : 'Draft'}
                         </div>
                         <div
                           style={{
@@ -388,10 +436,10 @@ export default function ReplyPage() {
                             lineHeight: 1.6,
                           }}
                         >
-                          {h.edited_reply || h.generated_reply}
+                          {finalText}
                         </div>
                         <div>
-                          <CopyButton text={h.edited_reply || h.generated_reply} />
+                          <CopyButton text={finalText} />
                         </div>
                       </>
                     )}
