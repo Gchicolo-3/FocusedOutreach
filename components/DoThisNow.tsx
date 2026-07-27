@@ -72,6 +72,28 @@ export default function DoThisNow() {
     })();
   }, []);
 
+  // This is the main working screen, so keep it current: refetch whenever
+  // George comes back to the tab/window. Throttled so a focus + visibility
+  // pair doesn't double-load.
+  useEffect(() => {
+    let lastLoad = Date.now();
+    function refresh() {
+      if (Date.now() - lastLoad < 5000) return;
+      lastLoad = Date.now();
+      loadTasks();
+    }
+    function onVisibility() {
+      if (document.visibilityState === 'visible') refresh();
+    }
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function loadTasks() {
     const today = new Date().toISOString().split('T')[0];
     clearLoadError();
