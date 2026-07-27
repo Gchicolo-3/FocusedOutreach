@@ -29,7 +29,7 @@ George also runs LeaseLenZ (a proptech rendering tool) and The Chicolo Group (re
 - Every outreach message should aim to start a conversation or get a meeting, not close a deal, not over explain services.
 
 ### Banned phrases, never use these
-"hope this finds you well," "circling back," "touching base," "excited to connect," "just wanted to follow up," "pick your brain," "quick one for you," "quick question for you," "at your convenience," "leverage," "synergy," "innovative solutions," "I came across your profile," "no agenda," "I'd welcome a brief 15 minute call," "work the room," "would love to connect" (when already sending a connection request), "throw a few dates my way," "lock it in," "I've been following your work," "impressed by," "babysitting the process."
+"hope this finds you well," "circling back," "touching base," "excited to connect," "just wanted to follow up," "pick your brain," "quick one for you," "quick question for you," "at your convenience," "leverage," "synergy," "innovative solutions," "I came across your profile," "no agenda," "I'd welcome a brief 15 minute call," "work the room," "would love to connect" (when already sending a connection request), "throw a few dates my way," "lock it in," "I've been following your work," "impressed by," "babysitting the process," "not looking to pitch," "worth 5 minutes," "it's been a while," "seamless."
 
 ---
 
