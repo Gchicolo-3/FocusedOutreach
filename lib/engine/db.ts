@@ -73,6 +73,9 @@ export async function getBrokersDueForTouch() {
     .or('qualified.is.null,qualified.eq.true')
     // Manual "not a fit" gate: exclude only explicit dismissed=true.
     .or('dismissed.is.null,dismissed.eq.false')
+    // Bucket gate: only active contacts get cadence. cold / not_worth_pursuing /
+    // blast_only are excluded (blast_only = mass send only, no cadence).
+    .or('bucket.is.null,bucket.eq.active')
     .order('tier', { ascending: true });
 
   if (error) throw new Error(`getBrokersDueForTouch: ${error.message}`);
@@ -90,6 +93,7 @@ export async function getPartnersDueForTouch() {
     .neq('tier', 'D')
     .or('qualified.is.null,qualified.eq.true')
     .or('dismissed.is.null,dismissed.eq.false')
+    .or('bucket.is.null,bucket.eq.active')
     .order('tier', { ascending: true });
 
   if (error) throw new Error(`getPartnersDueForTouch: ${error.message}`);
