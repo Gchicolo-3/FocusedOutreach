@@ -6,7 +6,7 @@
 // reviews it. NEVER disqualifies on a guess.
 
 import Anthropic from '@anthropic-ai/sdk';
-import { createClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/serverSupabase';
 
 export const PERSONAS = [
   'tenant_rep',
@@ -72,10 +72,7 @@ type Verdict = {
 };
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  return getServerSupabase();
 }
 
 // Compact one contact row into the evidence the model sees. Notes are

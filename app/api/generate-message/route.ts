@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/serverSupabase';
 import { GEORGE_TONE_PROFILE } from '@/lib/toneProfile';
 
 export const dynamic = 'force-dynamic';
@@ -9,11 +9,8 @@ export const maxDuration = 30; // fast model returns in a few seconds
 // Real messages George has saved as his voice. These are the strongest anchor
 // for matching his tone, so they're injected ahead of the static examples.
 async function fetchVoiceSamples(channel: string, limit = 6): Promise<string[]> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return [];
   try {
-    const supabase = createClient(url, key);
+    const supabase = getServerSupabase();
     // Prefer same-channel samples, then fall back to any channel.
     const { data } = await supabase
       .from('voice_samples')

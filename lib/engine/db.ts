@@ -5,25 +5,15 @@
 // Writes to new: signals, drafts, watchlist, agent_runs
 // NOTE: next_due and last_touch are stored as TEXT in brokers/partners
 
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { type SupabaseClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/serverSupabase';
 
-// Lazily create the client on first use. Instantiating at module load made the
-// client construct during Next.js's build-time "Collecting page data" phase,
-// which throws when env vars aren't present and forces these routes to be
-// evaluated at build instead of request time.
-let _client: SupabaseClient | null = null;
-function getClient(): SupabaseClient {
-  if (_client) return _client;
-  _client = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-  return _client;
-}
-
+// Lazy proxy so nothing constructs during Next.js's build-time "Collecting
+// page data" phase; the shared server client enforces the service-role key
+// in production (see lib/serverSupabase.ts).
 const supabase = new Proxy({} as SupabaseClient, {
   get(_target, prop) {
-    const client = getClient() as unknown as Record<string | symbol, unknown>;
+    const client = getServerSupabase() as unknown as Record<string | symbol, unknown>;
     const value = client[prop];
     return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(client) : value;
   },

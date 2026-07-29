@@ -4,7 +4,8 @@
 // reply to the `activities` table. A reply is logged at most once, tracked in
 // `email_replies` by the message's globally-unique internetMessageId.
 
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { type SupabaseClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/serverSupabase';
 import { graphFetch, NotConnectedError } from './graph';
 
 // Same key derivation as parseCSV.normalizeContactKey / storage.logActivity, so
@@ -63,10 +64,7 @@ export function senderEmail(msg: GraphMessage): string {
 }
 
 function db(): SupabaseClient {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  return getServerSupabase();
 }
 
 export type PollResult = {

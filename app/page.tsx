@@ -9,6 +9,7 @@ import RecordsView, { RecordTab } from '@/components/RecordsView';
 import ExportCSV from '@/components/ExportCSV';
 import RunEngineButton from '@/components/RunEngineButton';
 import RunClassifierButton from '@/components/RunClassifierButton';
+import AuthGate from '@/components/AuthGate';
 import { C } from '@/lib/design';
 
 const recordTabs: ReadonlyArray<TabId> = [
@@ -38,6 +39,7 @@ export default function Home() {
   const isRecordTab = recordTabs.includes(tab);
 
   return (
+    <AuthGate>
     <div style={{ background: C.bg, color: C.text, minHeight: '100vh' }}>
       <Header onImport={handleImport} refreshKey={refreshKey} />
       <TabNav active={tab} onChange={setTab} />
@@ -58,5 +60,6 @@ export default function Home() {
         {isRecordTab && <RecordsView key={refreshKey} view={tab as RecordTab} />}
       </main>
     </div>
+    </AuthGate>
   );
 }

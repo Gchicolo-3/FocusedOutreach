@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/serverSupabase';
 import {
   isReplyChannel,
   isReplyMode,
@@ -34,11 +34,8 @@ function sampleChannelFor(channel: ReplyChannel): string {
 }
 
 async function fetchVoiceSamples(channel: ReplyChannel, limit = 6): Promise<string[]> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return [];
   try {
-    const supabase = createClient(url, key);
+    const supabase = getServerSupabase();
     const { data } = await supabase
       .from('voice_samples')
       .select('text, channel')
@@ -170,10 +167,8 @@ export async function POST(req: NextRequest) {
     // waited for, so log it and return the text anyway. A review pass updates
     // edited_reply on the existing row; a fresh generate inserts a new row.
     let id: string | null = rowId || null;
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (url && key) {
-      const supabase = createClient(url, key);
+    try {
+      const supabase = getServerSupabase();
       if (isReview) {
         if (rowId) {
           const { error } = await supabase
@@ -201,6 +196,9 @@ export async function POST(req: NextRequest) {
           id = data.id;
         }
       }
+    } catch (e) {
+      // History is best-effort — never cost George the reply he waited for.
+      console.error('[reply-generator] history save skipped:', (e as Error).message);
     }
 
     return NextResponse.json({ id, generatedReply });

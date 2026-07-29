@@ -3,19 +3,16 @@
 // This is what George sees first thing in the morning
 
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { isEngineRequestAuthorized } from '@/lib/engine/auth';
+import { getServerSupabase } from '@/lib/serverSupabase';
 
 // Reads live data from Supabase on every request — never prerender at build time.
 export const dynamic = 'force-dynamic';
 
-// Service role key so this keeps working once RLS locks these tables down;
-// anon fallback preserves dev setups without the service key.
+// Service-role client (required in production) so this keeps working with RLS
+// locked down — see lib/serverSupabase.ts.
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  return getServerSupabase();
 }
 
 export async function GET(request: Request) {

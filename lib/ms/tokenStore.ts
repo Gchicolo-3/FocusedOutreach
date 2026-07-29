@@ -2,7 +2,8 @@
 // Server-only persistence for the connected Microsoft account's tokens.
 // Uses the Supabase service-role key so it works regardless of RLS.
 
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { type SupabaseClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/serverSupabase';
 
 const ROW_ID = 'default';
 
@@ -14,14 +15,8 @@ export type MsToken = {
   scope: string | null;
 };
 
-let _client: SupabaseClient | null = null;
 function db(): SupabaseClient {
-  if (_client) return _client;
-  _client = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-  return _client;
+  return getServerSupabase();
 }
 
 export async function getStoredToken(): Promise<MsToken | null> {

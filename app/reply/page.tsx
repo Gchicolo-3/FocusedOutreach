@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import AuthGate from '@/components/AuthGate';
 import type { ReplyChannel, ReplyMode } from '@/lib/replyPrompts';
 import { C, F, labelMono, card, btnPrimary, btnGhost, inputBase, pillStyle } from '@/lib/design';
 
@@ -195,6 +196,7 @@ export default function ReplyPage() {
   if (!mounted) return null;
 
   return (
+    <AuthGate>
     <div style={{ background: C.bg, color: C.text, minHeight: '100vh' }}>
       <header style={{ borderBottom: `1px solid ${C.border}` }}>
         <div
@@ -450,5 +452,6 @@ export default function ReplyPage() {
         </div>
       </main>
     </div>
+    </AuthGate>
   );
 }
