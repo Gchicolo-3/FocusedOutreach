@@ -4,16 +4,21 @@ import { useState, useEffect } from 'react';
 import TabNav, { TabId } from '@/components/TabNav';
 import Header from '@/components/Header';
 import DoThisNow from '@/components/DoThisNow';
-import Contacts from '@/components/Contacts';
 import Drafts from '@/components/Drafts';
-import BrokerEngine from '@/components/BrokerEngine';
-import ReferralPartners from '@/components/ReferralPartners';
-import TextLauncher from '@/components/TextLauncher';
-import SequencesTab from '@/components/Sequences';
-import NewContacts from '@/components/NewContacts';
+import RecordsView, { RecordTab } from '@/components/RecordsView';
+import ExportCSV from '@/components/ExportCSV';
 import RunEngineButton from '@/components/RunEngineButton';
 import RunClassifierButton from '@/components/RunClassifierButton';
 import { C } from '@/lib/design';
+
+const recordTabs: ReadonlyArray<TabId> = [
+  'brokers',
+  'cold-brokers',
+  'projects',
+  'partners',
+  'not-worth-pursuing',
+  'blast-only',
+];
 
 export default function Home() {
   const [tab, setTab] = useState<TabId>('do-this-now');
@@ -30,6 +35,8 @@ export default function Home() {
 
   if (!mounted) return null;
 
+  const isRecordTab = recordTabs.includes(tab);
+
   return (
     <div style={{ background: C.bg, color: C.text, minHeight: '100vh' }}>
       <Header onImport={handleImport} refreshKey={refreshKey} />
@@ -41,15 +48,14 @@ export default function Home() {
         >
           <RunEngineButton onComplete={handleImport} />
           <RunClassifierButton onComplete={handleImport} />
+          <ExportCSV />
         </div>
         {tab === 'do-this-now' && <DoThisNow key={refreshKey} />}
-        {tab === 'contacts' && <Contacts key={refreshKey} onGoToToday={() => setTab('do-this-now')} />}
         {tab === 'drafts' && <Drafts key={refreshKey} />}
-        {tab === 'broker-engine' && <BrokerEngine key={refreshKey} />}
-        {tab === 'referral-partners' && <ReferralPartners key={refreshKey} />}
-        {tab === 'text-launcher' && <TextLauncher key={refreshKey} />}
-        {tab === 'sequences' && <SequencesTab />}
-        {tab === 'new-contacts' && <NewContacts key={refreshKey} />}
+        {/* One RecordsView instance for all record tabs: switching tabs just
+            changes the filter over the already-loaded dataset — no reload,
+            no navigation. */}
+        {isRecordTab && <RecordsView key={refreshKey} view={tab as RecordTab} />}
       </main>
     </div>
   );
