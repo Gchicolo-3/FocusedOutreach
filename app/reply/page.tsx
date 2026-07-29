@@ -35,6 +35,16 @@ type HistoryRow = {
   created_at: string;
 };
 
+// Result of the server-side audit pass (banned phrases + editor checklist),
+// shown under the draft so George sees a real check happened and what it
+// caught. Shape mirrors the route's AuditOutcome.
+type AuditSummary = {
+  passed: boolean | null;
+  checked: string;
+  findings: string[];
+  warning: string | null;
+};
+
 function modeLabel(mode: ReplyMode): string {
   return MODES.find((m) => m.id === mode)?.label || mode;
 }
@@ -91,6 +101,7 @@ export default function ReplyPage() {
   // so a review pass lands on the right record.
   const [lastGenerated, setLastGenerated] = useState('');
   const [replyId, setReplyId] = useState<string | null>(null);
+  const [audit, setAudit] = useState<AuditSummary | null>(null);
   const [generating, setGenerating] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [error, setError] = useState('');
@@ -153,6 +164,7 @@ export default function ReplyPage() {
       setReply(data.generatedReply);
       setLastGenerated(data.generatedReply);
       setReplyId(data.id || null);
+      setAudit(data.audit || null);
       loadHistory();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
@@ -184,6 +196,9 @@ export default function ReplyPage() {
       if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
       setReply(data.generatedReply);
       setLastGenerated(data.generatedReply);
+      // The audit summary describes the generated draft; after a review pass
+      // of George's own edits it no longer applies.
+      setAudit(null);
       loadHistory();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
@@ -338,6 +353,42 @@ export default function ReplyPage() {
                 padding: 14,
               }}
             />
+            {/* Audit summary — the visible record that a real check ran and
+                what it caught. */}
+            {audit && (
+              <div
+                style={{
+                  background: C.surface2,
+                  border: `1px solid ${audit.warning ? C.red : C.border}`,
+                  borderRadius: 8,
+                  padding: '10px 12px',
+                  fontSize: 12,
+                  fontFamily: F.mono,
+                  lineHeight: 1.7,
+                }}
+              >
+                <div style={{ color: C.muted }}>Checked: {audit.checked}</div>
+                {audit.warning && (
+                  <div style={{ color: C.red }}>⚠ Warning: {audit.warning}. Do not copy as is.</div>
+                )}
+                {audit.findings.length === 0 ? (
+                  <div style={{ color: C.accent }}>No issues found</div>
+                ) : (
+                  audit.findings
+                    .filter((f) => f !== audit.warning)
+                    .map((f, i) => (
+                      <div key={i} style={{ color: C.amber }}>
+                        Fixed: {f}
+                      </div>
+                    ))
+                )}
+                {audit.passed === null && (
+                  <div style={{ color: C.muted }}>
+                    (editor pass unavailable this run, mechanical checks only)
+                  </div>
+                )}
+              </div>
+            )}
             {reply.trim() !== lastGenerated.trim() && (
               <span style={{ color: C.muted, fontSize: 12, fontFamily: F.body }}>
                 You&apos;ve edited this draft. Check my edits runs your version back
