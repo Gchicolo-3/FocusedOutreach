@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { buildSmsLink, composeInOutlook } from '@/lib/sendActions';
 import type { ReplyChannel, ReplyMode } from '@/lib/replyPrompts';
-import { C, F, labelMono, card, btnPrimary, btnGhost, inputBase, pillStyle } from '@/lib/design';
+import { C, F, labelMono, card, btnPrimary, btnSecondary, btnGhost, inputBase, pillStyle } from '@/lib/design';
 
 type Pill = 'teal' | 'accent' | 'purple' | 'amber' | 'blue' | 'muted';
 
@@ -33,7 +34,17 @@ type HistoryRow = {
   generated_reply: string;
   edited_reply: string | null;
   created_at: string;
+  rating: 'good' | 'bad' | null;
+  rating_note: string | null;
 };
+
+// Split an email-channel draft into its subject and body for the mailto /
+// Outlook-draft handoff. Non-email drafts pass through as body only.
+function splitDraftForEmail(draft: string): { subject: string; body: string } {
+  const m = draft.match(/^subject:\s*(.+)\r?\n\r?\n?/i);
+  if (!m) return { subject: '', body: draft.trim() };
+  return { subject: m[1].trim(), body: draft.slice(m[0].length).trim() };
+}
 
 // Result of the server-side audit pass (banned phrases + editor checklist),
 // shown under the draft so George sees a real check happened and what it
@@ -53,7 +64,26 @@ type ConnectedContact = {
   table: 'brokers' | 'partners' | 'prospects' | 'cold_brokers';
   name: string;
   company: string;
+  // For the Open in Mail / Open in Text handoff.
+  email: string;
+  phone: string;
+  mobile: string;
+  // Relationship tier ('A'/'B'/'C' for brokers; unused for other tables) —
+  // drives mode auto-detection on connect.
+  tier: string;
 };
+
+// Auto-pick the mode when a contact is connected: the matched table (and
+// broker tier) is a stronger signal than whatever mode was already selected.
+// It's a default, not a lock — any manual mode click afterwards still wins.
+function modeForContact(c: ConnectedContact): ReplyMode {
+  if (c.table === 'brokers') {
+    return c.tier === 'A' || c.tier === 'B' ? 'cre_referral' : 'broker_prospecting';
+  }
+  if (c.table === 'partners') return 'cre_referral';
+  if (c.table === 'prospects') return 'client_prospecting';
+  return 'broker_prospecting'; // cold_brokers
+}
 
 const contactTablePill: Record<ConnectedContact['table'], { label: string; pill: Pill }> = {
   brokers: { label: 'Broker', pill: 'purple' },
@@ -66,23 +96,36 @@ const contactTablePill: Record<ConnectedContact['table'], { label: string; pill:
 // client-side typeahead. ~850 rows total, small columns — cheap to hold.
 async function loadContactIndex(): Promise<ConnectedContact[]> {
   const [brokers, partners, prospects, cold] = await Promise.all([
-    supabase.from('brokers').select('id, first_name, last_name, firm'),
-    supabase.from('partners').select('id, first_name, last_name, company'),
-    supabase.from('prospects').select('id, contact, company'),
-    supabase.from('cold_brokers').select('id, name, firm'),
+    supabase.from('brokers').select('id, first_name, last_name, firm, email, phone, mobile, tier'),
+    supabase.from('partners').select('id, first_name, last_name, company, email, phone'),
+    supabase.from('prospects').select('id, contact, company, email, phone'),
+    supabase.from('cold_brokers').select('id, name, firm, email, phone, mobile'),
   ]);
   const out: ConnectedContact[] = [];
   for (const r of brokers.data || []) {
-    out.push({ id: r.id, table: 'brokers', name: `${r.first_name} ${r.last_name}`.trim(), company: r.firm || '' });
+    out.push({
+      id: r.id, table: 'brokers', name: `${r.first_name} ${r.last_name}`.trim(),
+      company: r.firm || '', email: r.email || '', phone: r.phone || '', mobile: r.mobile || '',
+      tier: r.tier || '',
+    });
   }
   for (const r of partners.data || []) {
-    out.push({ id: r.id, table: 'partners', name: `${r.first_name} ${r.last_name}`.trim(), company: r.company || '' });
+    out.push({
+      id: r.id, table: 'partners', name: `${r.first_name} ${r.last_name}`.trim(),
+      company: r.company || '', email: r.email || '', phone: r.phone || '', mobile: '', tier: '',
+    });
   }
   for (const r of prospects.data || []) {
-    out.push({ id: r.id, table: 'prospects', name: r.contact || '', company: r.company || '' });
+    out.push({
+      id: r.id, table: 'prospects', name: r.contact || '', company: r.company || '',
+      email: r.email || '', phone: r.phone || '', mobile: '', tier: '',
+    });
   }
   for (const r of cold.data || []) {
-    out.push({ id: r.id, table: 'cold_brokers', name: r.name || '', company: r.firm || '' });
+    out.push({
+      id: r.id, table: 'cold_brokers', name: r.name || '', company: r.firm || '',
+      email: r.email || '', phone: r.phone || '', mobile: r.mobile || '', tier: '',
+    });
   }
   return out.filter((c) => c.name);
 }
@@ -148,6 +191,11 @@ export default function ReplyPage() {
   const [contact, setContact] = useState<ConnectedContact | null>(null);
   const [contactQuery, setContactQuery] = useState('');
   const [contactIndex, setContactIndex] = useState<ConnectedContact[] | null>(null);
+  // Feedback loop: opt-in thumbs on the generated draft, note on thumbs down.
+  const [rating, setRating] = useState<'good' | 'bad' | null>(null);
+  const [showRatingNote, setShowRatingNote] = useState(false);
+  const [ratingNote, setRatingNote] = useState('');
+  const [historyBadOnly, setHistoryBadOnly] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [error, setError] = useState('');
@@ -197,7 +245,7 @@ export default function ReplyPage() {
   async function loadHistory() {
     const { data, error: err } = await supabase
       .from('reply_drafts')
-      .select('id, mode, channel, incoming_email, generated_reply, edited_reply, created_at')
+      .select('id, mode, channel, incoming_email, generated_reply, edited_reply, created_at, rating, rating_note')
       .order('created_at', { ascending: false })
       .limit(25);
     if (err) {
@@ -230,6 +278,9 @@ export default function ReplyPage() {
       setLastGenerated(data.generatedReply);
       setReplyId(data.id || null);
       setAudit(data.audit || null);
+      setRating(null);
+      setShowRatingNote(false);
+      setRatingNote('');
       loadHistory();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
@@ -271,6 +322,64 @@ export default function ReplyPage() {
       setReviewing(false);
     }
   }
+
+  // Thumbs on the generated draft. Clicking the active thumb again clears it.
+  // Opt-in — nothing in the flow depends on rating.
+  async function rate(value: 'good' | 'bad') {
+    if (!replyId) return;
+    const next = rating === value ? null : value;
+    setRating(next);
+    setShowRatingNote(next === 'bad');
+    if (next !== 'bad') setRatingNote('');
+    const { error: err } = await supabase
+      .from('reply_drafts')
+      .update({ rating: next, ...(next === 'bad' ? {} : { rating_note: null }) })
+      .eq('id', replyId);
+    if (err) console.error('rate:', err);
+    loadHistory();
+  }
+
+  async function saveRatingNote() {
+    if (!replyId) return;
+    const note = ratingNote.trim();
+    const { error: err } = await supabase
+      .from('reply_drafts')
+      .update({ rating_note: note || null })
+      .eq('id', replyId);
+    if (err) console.error('saveRatingNote:', err);
+    loadHistory();
+  }
+
+  // Start fresh: input, context, draft, and audit go; connected contact,
+  // mode, and channel stay (George often writes several things in a row to
+  // or about the same person on the same channel).
+  function clearAll() {
+    setIncomingEmail('');
+    setThreadContext('');
+    setShowContext(false);
+    setReply('');
+    setLastGenerated('');
+    setReplyId(null);
+    setAudit(null);
+    setRating(null);
+    setShowRatingNote(false);
+    setRatingNote('');
+    setError('');
+  }
+
+  // Open-in-app handoff, reusing the exact Do This Now mechanism
+  // (composeInOutlook: Graph draft -> mailto fallback; sms: link for texts).
+  function openInMail() {
+    const { subject, body } = splitDraftForEmail(reply);
+    composeInOutlook(contact?.email || '', subject, body);
+  }
+
+  // Texts never carry a subject line; strip one if the draft has it (only
+  // happens when switching channel after generating an email draft).
+  const smsHref =
+    channel === 'text'
+      ? buildSmsLink(contact?.mobile || contact?.phone || '', splitDraftForEmail(reply).body)
+      : null;
 
   if (!mounted) return null;
 
@@ -393,6 +502,10 @@ export default function ReplyPage() {
                         onClick={() => {
                           setContact(c);
                           setContactQuery('');
+                          // Auto-detect the mode from the matched table/tier —
+                          // overrides the current pick; a manual click after
+                          // this still wins as usual.
+                          pickMode(modeForContact(c));
                         }}
                         className="flex items-center gap-2"
                         style={{
@@ -469,6 +582,11 @@ export default function ReplyPage() {
             >
               {generating ? 'Generating…' : 'Generate'}
             </button>
+            {(incomingEmail.trim() || threadContext.trim() || reply || lastGenerated) && (
+              <button onClick={clearAll} disabled={generating || reviewing} style={btnGhost} title="Clear the input, context, draft, and audit. Keeps the connected contact, mode, and channel.">
+                ✕ Clear
+              </button>
+            )}
             {error && <span style={{ color: C.red, fontSize: 12, fontFamily: F.body }}>{error}</span>}
           </div>
         </div>
@@ -495,8 +613,55 @@ export default function ReplyPage() {
                   {generating ? '…' : 'Regenerate'}
                 </button>
                 <CopyButton text={reply} primary={reply.trim() === lastGenerated.trim()} />
+                {channel === 'email' && (
+                  <button onClick={openInMail} style={btnSecondary} title={contact?.email ? `To: ${contact.email}` : 'Recipient left blank — fill it in the mail app'}>
+                    ✉ Open in Mail
+                  </button>
+                )}
+                {channel === 'text' && smsHref && (
+                  <a href={smsHref} style={{ ...btnSecondary, textDecoration: 'none', display: 'inline-block' }} title={contact?.mobile || contact?.phone ? `To: ${contact.mobile || contact.phone}` : 'Recipient left blank — pick it in the messages app'}>
+                    💬 Open in Text
+                  </a>
+                )}
+                {replyId && (
+                  <>
+                    <button
+                      onClick={() => rate('good')}
+                      title="This one landed"
+                      style={{ ...btnGhost, padding: '8px 10px', borderColor: rating === 'good' ? C.accent : C.border, color: rating === 'good' ? C.accent : C.muted }}
+                    >
+                      👍
+                    </button>
+                    <button
+                      onClick={() => rate('bad')}
+                      title="This one was off"
+                      style={{ ...btnGhost, padding: '8px 10px', borderColor: rating === 'bad' ? C.red : C.border, color: rating === 'bad' ? C.red : C.muted }}
+                    >
+                      👎
+                    </button>
+                  </>
+                )}
               </div>
             </div>
+            {channel === 'text' && (
+              <span style={{ color: C.muted2, fontSize: 11, fontFamily: F.body, marginTop: -6 }}>
+                Open in Text works reliably on your phone; desktop browsers often have no app registered for sms links.
+              </span>
+            )}
+            {showRatingNote && (
+              <div className="flex items-center gap-2">
+                <input
+                  value={ratingNote}
+                  onChange={(e) => setRatingNote(e.target.value)}
+                  onBlur={saveRatingNote}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                  }}
+                  placeholder="What was off? (optional)"
+                  style={{ ...inputBase, fontSize: 12, maxWidth: 420 }}
+                />
+              </div>
+            )}
             <textarea
               value={reply}
               onChange={(e) => setReply(e.target.value)}
@@ -574,13 +739,26 @@ export default function ReplyPage() {
             </span>
           </button>
 
+          {showHistory && (
+            <div className="flex gap-2">
+              <button
+                onClick={() => setHistoryBadOnly((v) => !v)}
+                style={{ ...(historyBadOnly ? btnPrimary : btnGhost), padding: '5px 10px', fontSize: 11 }}
+              >
+                👎 Rated bad only
+              </button>
+            </div>
+          )}
+
           {showHistory &&
             (history.length === 0 ? (
               <div style={{ color: C.muted, fontSize: 13, fontFamily: F.body }}>
                 No drafts generated yet.
               </div>
             ) : (
-              history.map((h) => {
+              history
+                .filter((h) => !historyBadOnly || h.rating === 'bad')
+                .map((h) => {
                 const expanded = expandedId === h.id;
                 const finalText = h.edited_reply || h.generated_reply;
                 return (
@@ -612,6 +790,14 @@ export default function ReplyPage() {
                       >
                         {h.incoming_email.slice(0, 110)}
                       </span>
+                      {h.rating && (
+                        <span
+                          title={h.rating === 'bad' ? h.rating_note || 'Rated bad' : 'Rated good'}
+                          style={{ fontSize: 13, flexShrink: 0 }}
+                        >
+                          {h.rating === 'good' ? '👍' : '👎'}
+                        </span>
+                      )}
                       <span style={pillStyle(modePill(h.mode))}>{modeLabel(h.mode)}</span>
                       <span style={pillStyle('muted')}>{channelLabel(h.channel)}</span>
                       <span style={labelMono}>{new Date(h.created_at).toLocaleDateString()}</span>
@@ -644,6 +830,11 @@ export default function ReplyPage() {
                         >
                           {finalText}
                         </div>
+                        {h.rating === 'bad' && h.rating_note && (
+                          <div style={{ fontSize: 12, color: C.red, fontFamily: F.body }}>
+                            👎 {h.rating_note}
+                          </div>
+                        )}
                         <div>
                           <CopyButton text={finalText} />
                         </div>
