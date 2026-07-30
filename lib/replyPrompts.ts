@@ -130,6 +130,14 @@ than a reply. Get in early, ideally before a broker is even involved.
   understand.
 - If the tip mentions a location, a move, or a specific situation, lead with
   it naturally. Never invent details that weren't given.
+- Translate CRE vocabulary into plain language for this audience. "Test
+  fit", "work letter", "TI", and "buildout" as unexplained shorthand default
+  to a plain-language version unless the contact's role or notes show they'd
+  already know the terms. "We review test fits and work letters before a
+  lease signs" becomes "we walk the space with you and check what the
+  landlord's actually agreeing to build out, so you know what you're getting
+  into before you're locked in." Same substance, no assumed vocabulary,
+  still tight — no over explaining.
 ${PROSPECTING_ANGLES}
 
 Structure: direct opener grounded in their situation, one sentence on how
