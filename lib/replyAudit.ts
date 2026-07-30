@@ -65,8 +65,8 @@ export function findBannedPhrases(text: string, channel: ReplyChannel): string[]
 // closing-ask check for the concrete-deliverable check.
 export function auditCheckedSummary(mode: ReplyMode): string {
   return mode === 'internal'
-    ? 'banned phrases, concrete next deliverable, AI-sounding phrasing'
-    : 'banned phrases, real trigger, closing ask, AI-sounding phrasing';
+    ? 'banned phrases, concrete next deliverable, AI-sounding phrasing, channel format'
+    : 'banned phrases, real trigger, closing ask, AI-sounding phrasing, channel format';
 }
 
 export type EditorVerdict = {
@@ -86,7 +86,23 @@ export type AuditOutcome = {
   warning: string | null;
 };
 
-function editorSystemPrompt(mode: ReplyMode): string {
+// What each channel's output must look like, for checklist item 5. Mirrors
+// the channel blocks in lib/replyPrompts.ts.
+function channelFormatRules(channel: ReplyChannel, mode: ReplyMode): string {
+  const signoff = mode === 'internal' ? '"Thanks," then "George"' : '"Best," then "George"';
+  switch (channel) {
+    case 'email':
+      return `EMAIL: first line "Subject: ..." then a blank line, body opens "Hey [first name],", closes with ${signoff} on two separate lines.`;
+    case 'text':
+      return 'TEXT MESSAGE: 2 to 3 short lines max. No subject line and NO sign-off — no "Best, George", no "Thanks, George", nothing after the message itself. Cold texts never include links.';
+    case 'linkedin_connect':
+      return 'LINKEDIN CONNECTION NOTE: hard limit 280 characters. No subject, no sign-off, no meeting ask (the connect is the ask).';
+    case 'linkedin_message':
+      return 'LINKEDIN MESSAGE: max 3 sentences. No subject line, no formal sign-off.';
+  }
+}
+
+function editorSystemPrompt(mode: ReplyMode, channel: ReplyChannel): string {
   const closingCheck =
     mode === 'internal'
       ? `1. CLOSING: internal messages must end with a concrete next deliverable
@@ -124,6 +140,10 @@ ${closingCheck}
    phrase without matching it exactly (e.g. "just wanted to see how things
    are" is "touching base" in disguise). The exact-match scan already ran;
    you catch the paraphrases.
+5. CHANNEL FORMAT: the draft must match this channel's required shape.
+   ${channelFormatRules(channel, mode)}
+   A sign-off on a channel that forbids one, a missing subject line on email,
+   or a blown length limit fails this check.
 
 REVISION RULES, when a check fails:
 - Change only what's needed to fix the failed check. Everything else stays
@@ -214,7 +234,7 @@ export async function runEditorPass(
       // it does not touch the first one.
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
-      system: editorSystemPrompt(args.mode),
+      system: editorSystemPrompt(args.mode, args.channel),
       messages: [{ role: 'user', content: editorUserPrompt(args) }],
     });
     const block = response.content.find((b) => b.type === 'text');
