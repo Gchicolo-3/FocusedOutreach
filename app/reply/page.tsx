@@ -68,7 +68,22 @@ type ConnectedContact = {
   email: string;
   phone: string;
   mobile: string;
+  // Relationship tier ('A'/'B'/'C' for brokers; unused for other tables) —
+  // drives mode auto-detection on connect.
+  tier: string;
 };
+
+// Auto-pick the mode when a contact is connected: the matched table (and
+// broker tier) is a stronger signal than whatever mode was already selected.
+// It's a default, not a lock — any manual mode click afterwards still wins.
+function modeForContact(c: ConnectedContact): ReplyMode {
+  if (c.table === 'brokers') {
+    return c.tier === 'A' || c.tier === 'B' ? 'cre_referral' : 'broker_prospecting';
+  }
+  if (c.table === 'partners') return 'cre_referral';
+  if (c.table === 'prospects') return 'client_prospecting';
+  return 'broker_prospecting'; // cold_brokers
+}
 
 const contactTablePill: Record<ConnectedContact['table'], { label: string; pill: Pill }> = {
   brokers: { label: 'Broker', pill: 'purple' },
@@ -81,7 +96,7 @@ const contactTablePill: Record<ConnectedContact['table'], { label: string; pill:
 // client-side typeahead. ~850 rows total, small columns — cheap to hold.
 async function loadContactIndex(): Promise<ConnectedContact[]> {
   const [brokers, partners, prospects, cold] = await Promise.all([
-    supabase.from('brokers').select('id, first_name, last_name, firm, email, phone, mobile'),
+    supabase.from('brokers').select('id, first_name, last_name, firm, email, phone, mobile, tier'),
     supabase.from('partners').select('id, first_name, last_name, company, email, phone'),
     supabase.from('prospects').select('id, contact, company, email, phone'),
     supabase.from('cold_brokers').select('id, name, firm, email, phone, mobile'),
@@ -91,24 +106,25 @@ async function loadContactIndex(): Promise<ConnectedContact[]> {
     out.push({
       id: r.id, table: 'brokers', name: `${r.first_name} ${r.last_name}`.trim(),
       company: r.firm || '', email: r.email || '', phone: r.phone || '', mobile: r.mobile || '',
+      tier: r.tier || '',
     });
   }
   for (const r of partners.data || []) {
     out.push({
       id: r.id, table: 'partners', name: `${r.first_name} ${r.last_name}`.trim(),
-      company: r.company || '', email: r.email || '', phone: r.phone || '', mobile: '',
+      company: r.company || '', email: r.email || '', phone: r.phone || '', mobile: '', tier: '',
     });
   }
   for (const r of prospects.data || []) {
     out.push({
       id: r.id, table: 'prospects', name: r.contact || '', company: r.company || '',
-      email: r.email || '', phone: r.phone || '', mobile: '',
+      email: r.email || '', phone: r.phone || '', mobile: '', tier: '',
     });
   }
   for (const r of cold.data || []) {
     out.push({
       id: r.id, table: 'cold_brokers', name: r.name || '', company: r.firm || '',
-      email: r.email || '', phone: r.phone || '', mobile: r.mobile || '',
+      email: r.email || '', phone: r.phone || '', mobile: r.mobile || '', tier: '',
     });
   }
   return out.filter((c) => c.name);
@@ -334,6 +350,23 @@ export default function ReplyPage() {
     loadHistory();
   }
 
+  // Start fresh: input, context, draft, and audit go; connected contact,
+  // mode, and channel stay (George often writes several things in a row to
+  // or about the same person on the same channel).
+  function clearAll() {
+    setIncomingEmail('');
+    setThreadContext('');
+    setShowContext(false);
+    setReply('');
+    setLastGenerated('');
+    setReplyId(null);
+    setAudit(null);
+    setRating(null);
+    setShowRatingNote(false);
+    setRatingNote('');
+    setError('');
+  }
+
   // Open-in-app handoff, reusing the exact Do This Now mechanism
   // (composeInOutlook: Graph draft -> mailto fallback; sms: link for texts).
   function openInMail() {
@@ -469,6 +502,10 @@ export default function ReplyPage() {
                         onClick={() => {
                           setContact(c);
                           setContactQuery('');
+                          // Auto-detect the mode from the matched table/tier —
+                          // overrides the current pick; a manual click after
+                          // this still wins as usual.
+                          pickMode(modeForContact(c));
                         }}
                         className="flex items-center gap-2"
                         style={{
@@ -545,6 +582,11 @@ export default function ReplyPage() {
             >
               {generating ? 'Generating…' : 'Generate'}
             </button>
+            {(incomingEmail.trim() || threadContext.trim() || reply || lastGenerated) && (
+              <button onClick={clearAll} disabled={generating || reviewing} style={btnGhost} title="Clear the input, context, draft, and audit. Keeps the connected contact, mode, and channel.">
+                ✕ Clear
+              </button>
+            )}
             {error && <span style={{ color: C.red, fontSize: 12, fontFamily: F.body }}>{error}</span>}
           </div>
         </div>
