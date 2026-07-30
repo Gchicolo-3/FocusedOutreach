@@ -45,6 +45,48 @@ type AuditSummary = {
   warning: string | null;
 };
 
+// A CRM contact George can connect a draft to via the search bar. The
+// server loads the full row (tier, deals, last touch, notes, touch log) and
+// feeds it to the generation and the audit's trigger check.
+type ConnectedContact = {
+  id: string;
+  table: 'brokers' | 'partners' | 'prospects' | 'cold_brokers';
+  name: string;
+  company: string;
+};
+
+const contactTablePill: Record<ConnectedContact['table'], { label: string; pill: Pill }> = {
+  brokers: { label: 'Broker', pill: 'purple' },
+  partners: { label: 'Partner', pill: 'teal' },
+  prospects: { label: 'Prospect', pill: 'accent' },
+  cold_brokers: { label: 'Cold Broker', pill: 'blue' },
+};
+
+// Loads a slim name/company list from all four contact tables once, for the
+// client-side typeahead. ~850 rows total, small columns — cheap to hold.
+async function loadContactIndex(): Promise<ConnectedContact[]> {
+  const [brokers, partners, prospects, cold] = await Promise.all([
+    supabase.from('brokers').select('id, first_name, last_name, firm'),
+    supabase.from('partners').select('id, first_name, last_name, company'),
+    supabase.from('prospects').select('id, contact, company'),
+    supabase.from('cold_brokers').select('id, name, firm'),
+  ]);
+  const out: ConnectedContact[] = [];
+  for (const r of brokers.data || []) {
+    out.push({ id: r.id, table: 'brokers', name: `${r.first_name} ${r.last_name}`.trim(), company: r.firm || '' });
+  }
+  for (const r of partners.data || []) {
+    out.push({ id: r.id, table: 'partners', name: `${r.first_name} ${r.last_name}`.trim(), company: r.company || '' });
+  }
+  for (const r of prospects.data || []) {
+    out.push({ id: r.id, table: 'prospects', name: r.contact || '', company: r.company || '' });
+  }
+  for (const r of cold.data || []) {
+    out.push({ id: r.id, table: 'cold_brokers', name: r.name || '', company: r.firm || '' });
+  }
+  return out.filter((c) => c.name);
+}
+
 function modeLabel(mode: ReplyMode): string {
   return MODES.find((m) => m.id === mode)?.label || mode;
 }
@@ -102,6 +144,10 @@ export default function ReplyPage() {
   const [lastGenerated, setLastGenerated] = useState('');
   const [replyId, setReplyId] = useState<string | null>(null);
   const [audit, setAudit] = useState<AuditSummary | null>(null);
+  // Contact connect: search over the CRM, pick the account this draft is for.
+  const [contact, setContact] = useState<ConnectedContact | null>(null);
+  const [contactQuery, setContactQuery] = useState('');
+  const [contactIndex, setContactIndex] = useState<ConnectedContact[] | null>(null);
   const [generating, setGenerating] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [error, setError] = useState('');
@@ -131,6 +177,23 @@ export default function ReplyPage() {
     localStorage.setItem(CHANNEL_STORAGE_KEY, c);
   }
 
+  // Lazily fill the typeahead index the first time George types in the
+  // contact search.
+  async function ensureContactIndex() {
+    if (contactIndex) return;
+    setContactIndex(await loadContactIndex());
+  }
+
+  const contactMatches =
+    contactQuery.trim().length >= 2 && contactIndex
+      ? contactIndex
+          .filter((c) => {
+            const q = contactQuery.trim().toLowerCase();
+            return c.name.toLowerCase().includes(q) || c.company.toLowerCase().includes(q);
+          })
+          .slice(0, 8)
+      : [];
+
   async function loadHistory() {
     const { data, error: err } = await supabase
       .from('reply_drafts')
@@ -157,6 +220,8 @@ export default function ReplyPage() {
           channel,
           incomingEmail,
           threadContext: threadContext.trim() || undefined,
+          contactId: contact?.id,
+          contactTable: contact?.table,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -272,6 +337,96 @@ export default function ReplyPage() {
             }
             style={textareaStyle}
           />
+
+          {/* Contact connect — search the CRM and tie this draft to the real
+              account, so the model works from actual relationship facts
+              (deals, last touch, notes) instead of guessing. */}
+          <div>
+            <label style={labelMono}>Connect contact (optional)</label>
+            {contact ? (
+              <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: 6 }}>
+                <span style={pillStyle(contactTablePill[contact.table].pill)}>
+                  {contactTablePill[contact.table].label}
+                </span>
+                <span style={{ fontFamily: F.body, fontSize: 13, color: C.text }}>
+                  {contact.name}
+                  {contact.company ? ` · ${contact.company}` : ''}
+                </span>
+                <button
+                  onClick={() => {
+                    setContact(null);
+                    setContactQuery('');
+                  }}
+                  title="Disconnect contact"
+                  style={{ ...btnGhost, padding: '3px 9px', fontSize: 11 }}
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <div style={{ position: 'relative', marginTop: 6 }}>
+                <input
+                  value={contactQuery}
+                  onChange={(e) => setContactQuery(e.target.value)}
+                  onFocus={ensureContactIndex}
+                  placeholder="Search name or company to connect the account…"
+                  style={{ ...inputBase, fontSize: 13 }}
+                />
+                {contactMatches.length > 0 && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 4px)',
+                      left: 0,
+                      right: 0,
+                      zIndex: 20,
+                      background: C.surface,
+                      border: `1px solid ${C.border2}`,
+                      borderRadius: 10,
+                      overflow: 'hidden',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                    }}
+                  >
+                    {contactMatches.map((c) => (
+                      <button
+                        key={`${c.table}-${c.id}`}
+                        onClick={() => {
+                          setContact(c);
+                          setContactQuery('');
+                        }}
+                        className="flex items-center gap-2"
+                        style={{
+                          display: 'flex',
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '8px 12px',
+                          background: 'transparent',
+                          border: 'none',
+                          borderBottom: `1px solid ${C.border}`,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <span style={pillStyle(contactTablePill[c.table].pill)}>
+                          {contactTablePill[c.table].label}
+                        </span>
+                        <span style={{ fontFamily: F.body, fontSize: 13, color: C.text }}>
+                          {c.name}
+                        </span>
+                        <span style={{ fontFamily: F.mono, fontSize: 11, color: C.muted }}>
+                          {c.company}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {contactQuery.trim().length >= 2 && contactIndex && contactMatches.length === 0 && (
+                  <div style={{ ...labelMono, marginTop: 4, textTransform: 'none', letterSpacing: 0 }}>
+                    No matching account — draft will run without CRM context.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {showContext ? (
             <>

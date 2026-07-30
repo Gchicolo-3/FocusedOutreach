@@ -143,6 +143,7 @@ function editorUserPrompt(args: {
   draft: string;
   incomingEmail: string;
   threadContext?: string;
+  crmContext?: string;
   channel: ReplyChannel;
 }): string {
   return [
@@ -150,6 +151,9 @@ function editorUserPrompt(args: {
     '--- pasted content ---',
     args.incomingEmail.trim(),
     '--- end pasted content ---',
+    args.crmContext?.trim()
+      ? `\nCRM CONTEXT, verified facts from George's records for this contact.\nA trigger drawn from these facts counts as a REAL trigger:\n--- crm context ---\n${args.crmContext.trim()}\n--- end crm context ---`
+      : '',
     args.threadContext?.trim()
       ? `\n--- thread context ---\n${args.threadContext.trim()}\n--- end thread context ---`
       : '',
@@ -201,6 +205,7 @@ export async function runEditorPass(
     channel: ReplyChannel;
     incomingEmail: string;
     threadContext?: string;
+    crmContext?: string;
   }
 ): Promise<EditorVerdict | null> {
   try {

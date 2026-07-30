@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import {
   isReplyChannel,
   isReplyMode,
@@ -35,7 +35,87 @@ type ReplyRequest = {
   // Nothing is saved to history. Used by the verification harness, and
   // usable to audit a hand-written draft.
   auditDraft?: string;
+  // Connected CRM contact (picked via the search bar on /reply). The row's
+  // real data — tier, deals, last touch, notes, recent touches — becomes
+  // context for both the generation and the audit's trigger check, so the
+  // model grounds the message in facts instead of filler.
+  contactId?: string;
+  contactTable?: string;
 };
+
+const CONTACT_TABLES = ['brokers', 'partners', 'prospects', 'cold_brokers'] as const;
+type ContactTable = (typeof CONTACT_TABLES)[number];
+
+function isContactTable(v: unknown): v is ContactTable {
+  return typeof v === 'string' && (CONTACT_TABLES as readonly string[]).includes(v);
+}
+
+// Builds the CRM context block for a connected contact: the row itself plus
+// recent touch_log entries. Returns null when the row can't be loaded — the
+// draft still generates, just without CRM grounding.
+async function fetchContactContext(
+  db: SupabaseClient,
+  table: ContactTable,
+  id: string
+): Promise<string | null> {
+  const { data: row, error } = await db.from(table).select('*').eq('id', id).maybeSingle();
+  if (error || !row) {
+    if (error) console.error('[reply-generator] contact fetch failed:', error.message);
+    return null;
+  }
+  const r = row as Record<string, unknown>;
+  const s = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+
+  const lines: string[] = [];
+  if (table === 'brokers') {
+    lines.push(`Broker: ${s(r.first_name) || ''} ${s(r.last_name) || ''} at ${s(r.firm) || 'unknown firm'}`.trim());
+    if (s(r.title)) lines.push(`Title: ${s(r.title)}`);
+    if (s(r.tier)) lines.push(`Relationship tier: ${s(r.tier)}`);
+    if (s(r.persona)) lines.push(`Persona: ${s(r.persona)}`);
+    if (typeof r.deal_count === 'number' && r.deal_count > 0) lines.push(`Deals sent to Focus Studio: ${r.deal_count}`);
+    if (Array.isArray(r.deal_names) && r.deal_names.length) lines.push(`Deal names: ${(r.deal_names as string[]).join(', ')}`);
+  } else if (table === 'partners') {
+    lines.push(`Referral partner: ${s(r.first_name) || ''} ${s(r.last_name) || ''} at ${s(r.company) || 'unknown company'}`.trim());
+    if (s(r.partner_type)) lines.push(`Partner type: ${s(r.partner_type)}`);
+    if (s(r.tier)) lines.push(`Relationship tier: ${s(r.tier)}`);
+    if (typeof r.referral_count === 'number' && r.referral_count > 0) lines.push(`Referrals given: ${r.referral_count}`);
+  } else if (table === 'prospects') {
+    lines.push(`Prospect: ${s(r.contact) || 'unknown'} at ${s(r.company) || 'unknown company'}`);
+    if (r.tier) lines.push(`Prospect tier: T${r.tier}`);
+    if (s(r.broker)) lines.push(`Referred by broker: ${s(r.broker)}`);
+    if (r.is_enterprise === true) lines.push('Enterprise-scale ($200k+) target');
+  } else {
+    lines.push(`Cold broker: ${s(r.name) || 'unknown'} at ${s(r.firm) || 'unknown firm'}`);
+    if (s(r.title)) lines.push(`Title: ${s(r.title)}`);
+    if (s(r.status)) lines.push(`Outreach status: ${s(r.status)}`);
+  }
+  const lastTouch = s(r.last_touch);
+  if (lastTouch) lines.push(`Last touch: ${lastTouch}`);
+  const notes = s(r.notes) || s(r.comments);
+  if (notes) lines.push(`Notes: ${notes.slice(0, 600)}`);
+
+  const { data } = await db
+    .from('touch_log')
+    .select('date, channel, spoke, notes')
+    .eq('contact_id', id)
+    .order('date', { ascending: false })
+    .limit(5);
+  const touches = (data || []) as Array<{
+    date: string;
+    channel: string;
+    spoke: boolean | null;
+    notes: string | null;
+  }>;
+  if (touches.length) {
+    lines.push(
+      'Recent logged touches: ' +
+        touches
+          .map((t) => `${t.date} (${t.channel}${t.spoke ? ', spoke' : ''}${t.notes ? `: ${String(t.notes).slice(0, 80)}` : ''})`)
+          .join('; ')
+    );
+  }
+  return lines.join('\n');
+}
 
 // Real messages George has written, same anchor the compose route uses.
 // Prefer samples from the matching voice_samples channel (email/text/linkedin),
@@ -116,6 +196,16 @@ export async function POST(req: NextRequest) {
   const isAuditOnly =
     !isReview && typeof body.auditDraft === 'string' && body.auditDraft.trim().length > 0;
 
+  // Connected contact (search bar on /reply): load their CRM data so the
+  // draft and the audit's trigger check work from real facts.
+  const dbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const dbKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const db = dbUrl && dbKey ? createClient(dbUrl, dbKey) : null;
+  const contactTable = isContactTable(body.contactTable) ? body.contactTable : null;
+  const contactId = typeof body.contactId === 'string' && body.contactId.trim() ? body.contactId.trim() : null;
+  const crmContext =
+    db && contactTable && contactId ? await fetchContactContext(db, contactTable, contactId) : null;
+
   const samples = await fetchVoiceSamples(channel);
   const voiceBlock = samples.length
     ? [
@@ -130,6 +220,17 @@ export async function POST(req: NextRequest) {
     : '';
 
   const context = (threadContext || '').trim();
+  const crmBlock = crmContext
+    ? [
+        '',
+        "CRM CONTEXT — verified data from George's own records for the contact",
+        'this message is for. Ground the trigger and personalization in these',
+        'facts. Never invent details beyond them:',
+        '--- crm context ---',
+        crmContext,
+        '--- end crm context ---',
+      ].join('\n')
+    : '';
   const prompt = [
     voiceBlock,
     'WHAT GEORGE PASTED IN (a message he received to reply to, or notes on a',
@@ -137,6 +238,7 @@ export async function POST(req: NextRequest) {
     '--- pasted content ---',
     incomingEmail.trim(),
     '--- end pasted content ---',
+    crmBlock,
     context
       ? [
           '',
@@ -241,6 +343,7 @@ export async function POST(req: NextRequest) {
         channel,
         incomingEmail,
         threadContext: context || undefined,
+        crmContext: crmContext || undefined,
       });
       if (verdict && !verdict.approved && verdict.revisedDraft) {
         generatedReply = sanitizeReply(verdict.revisedDraft);
@@ -278,10 +381,8 @@ export async function POST(req: NextRequest) {
     // waited for, so log it and return the text anyway. A review pass updates
     // edited_reply on the existing row; a fresh generate inserts a new row.
     let id: string | null = rowId || null;
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (url && key && !isAuditOnly) {
-      const supabase = createClient(url, key);
+    if (db && !isAuditOnly) {
+      const supabase = db;
       if (isReview) {
         if (rowId) {
           const { error } = await supabase
@@ -299,6 +400,8 @@ export async function POST(req: NextRequest) {
             incoming_email: incomingEmail.trim(),
             thread_context: context || null,
             generated_reply: generatedReply,
+            contact_id: crmContext ? contactId : null,
+            contact_table: crmContext ? contactTable : null,
             // Persistent audit record for a future voice.md refinement pass.
             audit_passed: audit ? audit.passed : null,
             audit_findings: audit && audit.findings.length ? audit.findings.join('\n') : null,
@@ -314,7 +417,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ id, generatedReply, audit });
+    return NextResponse.json({ id, generatedReply, audit, contactConnected: !!crmContext });
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError) {
       console.error('[reply-generator] auth error:', err.message);
