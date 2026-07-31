@@ -313,7 +313,7 @@ export type EngineDraft = {
 
 // Pending drafts the engine generated, for the review queue. edited_body wins
 // if George already tweaked it.
-export async function getPendingEngineDrafts(limit = 60): Promise<EngineDraft[]> {
+export async function getPendingEngineDrafts(limit = 1000): Promise<EngineDraft[]> {
   const { data, error } = await supabase
     .from('drafts')
     .select('*')
