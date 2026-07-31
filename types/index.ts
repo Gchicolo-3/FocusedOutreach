@@ -1,5 +1,8 @@
 export type ContactType = 'prospect' | 'broker' | 'referral_partner' | 'uncategorized';
 export type RelationshipTier = 'A' | 'B' | 'C';
+// Single field that drives every tab: moving a record between buckets is one
+// update. 'blast_only' mirrors the Salesforce D-tier logic (no cadence).
+export type Bucket = 'active' | 'cold' | 'not_worth_pursuing' | 'blast_only';
 export type Channel = 'call' | 'text' | 'email' | 'linkedin';
 export type PartnerType =
   | 'attorney'
@@ -27,6 +30,9 @@ export type Lead = {
   email?: string;
   phone?: string;
   dismissed?: boolean;
+  bucket?: Bucket;
+  // $200k+ end-user targets (Littler Mendelson scale) vs standard prospects.
+  isEnterprise?: boolean;
 };
 
 export type Broker = {
@@ -47,6 +53,8 @@ export type Broker = {
   notes: string;
   status: 'overdue' | 'due_soon' | 'on_track';
   dismissed?: boolean;
+  bucket?: Bucket;
+  persona?: string | null;
 };
 
 export type Partner = {
@@ -64,6 +72,8 @@ export type Partner = {
   email?: string;
   phone?: string;
   dismissed?: boolean;
+  bucket?: Bucket;
+  persona?: string | null;
 };
 
 export type ColdBroker = {
