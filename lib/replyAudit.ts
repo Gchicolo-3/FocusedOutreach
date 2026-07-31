@@ -64,9 +64,13 @@ export function findBannedPhrases(text: string, channel: ReplyChannel): string[]
 // What the audit checked, shown verbatim to George. Internal mode swaps the
 // closing-ask check for the concrete-deliverable check.
 export function auditCheckedSummary(mode: ReplyMode): string {
-  return mode === 'internal'
-    ? 'banned phrases, concrete next deliverable, AI-sounding phrasing, channel format'
-    : 'banned phrases, real trigger, closing ask, AI-sounding phrasing, channel format';
+  if (mode === 'internal') {
+    return 'banned phrases, concrete next deliverable, AI-sounding phrasing, channel format';
+  }
+  if (mode === 'client_prospecting') {
+    return 'banned phrases, real trigger, direct closing ask, AI-sounding phrasing, channel format, plain language';
+  }
+  return 'banned phrases, real trigger, direct closing ask, AI-sounding phrasing, channel format';
 }
 
 export type EditorVerdict = {
@@ -108,9 +112,34 @@ function editorSystemPrompt(mode: ReplyMode, channel: ReplyChannel): string {
       ? `1. CLOSING: internal messages must end with a concrete next deliverable
    ("I'll have the layout over by Thursday"), not a vague "let me know" or an
    open-ended sign-off.`
-      : `1. CLOSING ASK: the message must end on a real, specific ask or close —
-   coffee, lunch, a call, a concrete next step. "Let me know", "hope to catch
-   up soon", or trailing off with no ask at all FAILS this check.`;
+      : `1. DIRECT CLOSING ASK: the message must end on something the recipient
+   has to actually respond to — a direct question ("Coffee at Bellworks?",
+   "Free for a call this week?") or a direct, unhedged statement that still
+   functions as a clear next step. A statement of the sender's own
+   willingness or availability FAILS this check even when it mentions the
+   same activity a real ask would: "happy to grab coffee", "would love to
+   chat", "let me know if you'd be open to...", "coffee sometime would be
+   worth it" all fail. Trailing off with no close at all also fails. The
+   test is NOT whether coffee or a call is mentioned — it's whether the
+   recipient has something concrete to say yes or no to. When you fix this,
+   rewrite the close into a direct question ("Coffee at Bellworks?"), never
+   into a shortened version of the same passive structure.`;
+
+  const jargonCheck =
+    mode === 'client_prospecting'
+      ? `
+6. PLAIN LANGUAGE (client prospecting only): the reader is an end user
+   company contact, not a CRE professional. Flag industry shorthand — "test
+   fit", "work letter", "TI", "buildout" used as an unexplained noun, and
+   similar CRE terms — and translate it to plain language that keeps the
+   same substance, e.g. "we review test fits and work letters before a
+   lease signs" becomes "we walk the space with you and check what the
+   landlord's actually agreeing to build out, so you know what you're
+   getting into before you're locked in." Keep the shorthand ONLY when the
+   CRM context shows this specific recipient would know the terms (a
+   facilities or real estate background, even at a non-CRE company).
+   Default to plain language when uncertain.`
+      : '';
 
   return `${GEORGE_VOICE_CORE}
 
@@ -143,7 +172,7 @@ ${closingCheck}
 5. CHANNEL FORMAT: the draft must match this channel's required shape.
    ${channelFormatRules(channel, mode)}
    A sign-off on a channel that forbids one, a missing subject line on email,
-   or a blown length limit fails this check.
+   or a blown length limit fails this check.${jargonCheck}
 
 REVISION RULES, when a check fails:
 - Change only what's needed to fix the failed check. Everything else stays
