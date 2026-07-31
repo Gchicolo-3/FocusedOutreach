@@ -75,7 +75,7 @@ export default function Drafts() {
           Drafts
         </h2>
         <span style={labelMono}>
-          {drafts.length} waiting{drafts.length >= 60 ? '+ (newest first)' : ''}
+          {drafts.length} waiting{drafts.length >= 1000 ? '+ (newest first)' : ''}
         </span>
       </div>
 
