@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import type { GenerateChannel } from '@/lib/toneProfile';
+import type { Channel } from '@/types';
 import {
   getPendingEngineDrafts,
   setEngineDraftStatus,
@@ -9,6 +10,7 @@ import {
   getPartners,
   getProspects,
   getColdBrokers,
+  logTouch,
   type EngineDraft,
 } from '@/lib/storage';
 import MessageCard from '@/components/MessageCard';
@@ -27,6 +29,14 @@ const channelPill: Record<string, 'blue' | 'amber' | 'purple' | 'accent'> = {
 // Only channels MessageCard knows how to compose. Others fall back to email.
 function toGenerateChannel(ch: string): GenerateChannel {
   return ch === 'text' || ch === 'linkedin' || ch === 'call' ? ch : 'email';
+}
+
+// touch_log's Channel type has no 'voicemail'; fold it into 'call', everything
+// else unknown into 'email'.
+function toTouchChannel(ch: string): Channel {
+  if (ch === 'text' || ch === 'linkedin' || ch === 'call' || ch === 'email') return ch;
+  if (ch === 'voicemail') return 'call';
+  return 'email';
 }
 
 export default function Drafts() {
@@ -60,6 +70,13 @@ export default function Drafts() {
   async function resolve(d: EngineDraft, status: 'sent' | 'killed') {
     setBusy(d.id);
     await setEngineDraftStatus(d.id, status);
+    // "Mark done" (sent) is a completed outreach action, so record a touch to
+    // reset the contact's cadence and keep the engine from re-drafting them.
+    // "Dismiss" (killed) is a rejection, not outreach, so it logs nothing.
+    if (status === 'sent' && d.contactId) {
+      const today = new Date().toISOString().split('T')[0];
+      await logTouch(d.contactId, today, toTouchChannel(d.channel));
+    }
     setDrafts((prev) => prev.filter((x) => x.id !== d.id));
     setBusy(null);
   }

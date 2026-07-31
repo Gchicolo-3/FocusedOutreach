@@ -18,6 +18,7 @@ import {
   initDefaultColdBrokers,
   getLastLoadError,
   clearLoadError,
+  logTouch,
 } from '@/lib/storage';
 import { selectDaily5, buildTasksFromPins } from '@/lib/prioritize';
 import { C, F, labelMono, btnSecondary, btnGhost, pillStyle } from '@/lib/design';
@@ -71,6 +72,28 @@ export default function DoThisNow() {
     })();
   }, []);
 
+  // This is the main working screen, so keep it current: refetch whenever
+  // George comes back to the tab/window. Throttled so a focus + visibility
+  // pair doesn't double-load.
+  useEffect(() => {
+    let lastLoad = Date.now();
+    function refresh() {
+      if (Date.now() - lastLoad < 5000) return;
+      lastLoad = Date.now();
+      loadTasks();
+    }
+    function onVisibility() {
+      if (document.visibilityState === 'visible') refresh();
+    }
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function loadTasks() {
     const today = new Date().toISOString().split('T')[0];
     clearLoadError();
@@ -86,6 +109,9 @@ export default function DoThisNow() {
           getPinnedToday(),
         ]);
       const done = doneAll.filter((d) => d.date === today).map((d) => d.id);
+      // Seed today's done set so a done-but-still-pinned contact stays hidden
+      // after a reload (the daily 5 already excludes done, pins don't).
+      setDoneIds(new Set(done));
       const snoozed = snoozedAll.filter((s) => s.until > today).map((s) => s.id);
       setDoneIds(new Set(done));
 
@@ -128,7 +154,16 @@ export default function DoThisNow() {
   async function handleDone(id: string) {
     const today = new Date().toISOString().split('T')[0];
     await markDone(id, today);
+    // Record an outbound touch so the cadence engine's crossing-over check
+    // stops re-queuing and re-drafting this contact. Without this, marking a
+    // Do This Now item done never reached touch_log.
+    const task = tasks.find((t) => t.id === id);
+    if (task) await logTouch(id, today, task.channel);
     setDoneIds((prev) => new Set([...prev, id]));
+    // The card disappears from the queue (doneIds also drives the render
+    // filter below); collapse it first so the next card doesn't inherit an
+    // open state.
+    setExpanded((prev) => (prev === id ? null : prev));
   }
 
   async function handleSnooze(id: string) {
@@ -286,7 +321,7 @@ export default function DoThisNow() {
         </div>
       )}
 
-      {tasks.map((task, idx) => {
+      {tasks.filter((t) => !doneIds.has(t.id)).map((task, idx) => {
         const isDone = doneIds.has(task.id);
         const isExpanded = expanded === task.id;
 

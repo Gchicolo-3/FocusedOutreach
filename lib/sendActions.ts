@@ -3,13 +3,18 @@
 // iMessage app on iOS. mailto: opens the default mail client (Outlook if
 // that's your default). No auth or API calls needed.
 
+// URL for the sms: deep link, shared by openInMessages and anchor-style
+// buttons (e.g. Open in Text on /reply).
+// macOS/iOS accept sms:+1234567890&body=... ; Android uses ?body= ; we use ?
+// which works on both current macOS/iOS and modern Android.
+export function buildSmsLink(phone: string, message: string): string {
+  const cleanPhone = (phone || '').replace(/\D/g, '');
+  return `sms:${cleanPhone}?body=${encodeURIComponent(message)}`;
+}
+
 export function openInMessages(phone: string, message: string): void {
   if (typeof window === 'undefined') return;
-  const cleanPhone = (phone || '').replace(/\D/g, '');
-  const encoded = encodeURIComponent(message);
-  // macOS/iOS accept sms:+1234567890&body=... ; Android uses ?body= ; we use ?
-  // which works on both current macOS/iOS and modern Android.
-  window.location.href = `sms:${cleanPhone}?body=${encoded}`;
+  window.location.href = buildSmsLink(phone, message);
 }
 
 export function openInOutlook(email: string, subject: string, body: string): void {

@@ -1,16 +1,20 @@
 'use client';
 
+import Link from 'next/link';
 import { C, F } from '@/lib/design';
 
+// Do This Now / Drafts are the daily workflow queues; every other tab is a
+// filtered view of the same records dataset (see RecordsView) — filters, not
+// separate pages.
 const tabs = [
   { id: 'do-this-now', label: 'Do This Now' },
-  { id: 'contacts', label: 'Contacts' },
   { id: 'drafts', label: 'Drafts' },
-  { id: 'broker-engine', label: 'Broker Engine' },
-  { id: 'referral-partners', label: 'Referral Partners' },
-  { id: 'text-launcher', label: 'Text Launcher' },
-  { id: 'sequences', label: 'Sequences' },
-  { id: 'new-contacts', label: 'New Contacts' },
+  { id: 'brokers', label: 'Brokers' },
+  { id: 'cold-brokers', label: 'Cold Brokers' },
+  { id: 'projects', label: 'Potential Projects' },
+  { id: 'partners', label: 'Referral Partners' },
+  { id: 'not-worth-pursuing', label: 'Not Worth Pursuing' },
+  { id: 'blast-only', label: 'Blast Only' },
 ] as const;
 
 export type TabId = (typeof tabs)[number]['id'];
@@ -61,6 +65,23 @@ export default function TabNav({
             </button>
           );
         })}
+        {/* Separate page, not a tab — same styling so it reads as part of the nav. */}
+        <Link
+          href="/reply"
+          style={{
+            padding: '14px 16px',
+            fontSize: 13,
+            fontFamily: F.body,
+            fontWeight: 400,
+            color: C.muted,
+            borderBottom: '2px solid transparent',
+            whiteSpace: 'nowrap',
+            textDecoration: 'none',
+            marginBottom: -1,
+          }}
+        >
+          Reply Generator ↗
+        </Link>
       </div>
     </nav>
   );
