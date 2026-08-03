@@ -11,6 +11,7 @@ import { sendMorningDigest } from '@/lib/engine/digest';
 import { logAgentRun, getPendingDraftKeys, normalizeContactName } from '@/lib/engine/db';
 import { isEngineRequestAuthorized } from '@/lib/engine/auth';
 import { runProspector } from '@/lib/engine/prospector';
+import { runNewsProspector } from '@/lib/engine/newsProspector';
 import { runQualifier } from '@/lib/engine/qualifier';
 
 export const maxDuration = 300; // 5 min max for Vercel Pro, 60s for hobby
@@ -42,7 +43,11 @@ export async function GET(request: Request) {
   try {
     // Step 1: Prospector - find new business signals via ZoomInfo
     console.log('[Engine] Running Prospector...');
-    const rawSignals = await runProspector();
+    const [ziSignals, newsSignals] = await Promise.all([
+      runProspector(),
+      runNewsProspector(),
+    ]);
+    const rawSignals = [...ziSignals, ...newsSignals];
     summary.signalsFound = rawSignals.length;
 
     // Step 2: Qualifier - score against Focus Studio ICP, route actionable/watchlist
