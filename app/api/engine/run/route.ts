@@ -10,6 +10,8 @@ import { runCopywriter } from '@/lib/engine/copywriter';
 import { sendMorningDigest } from '@/lib/engine/digest';
 import { logAgentRun, getPendingDraftKeys, normalizeContactName } from '@/lib/engine/db';
 import { isEngineRequestAuthorized } from '@/lib/engine/auth';
+import { runProspector } from '@/lib/engine/prospector';
+import { runQualifier } from '@/lib/engine/qualifier';
 
 export const maxDuration = 300; // 5 min max for Vercel Pro, 60s for hobby
 export const dynamic = 'force-dynamic'; // request-time only; never prerender
@@ -38,12 +40,15 @@ export async function GET(request: Request) {
   };
 
   try {
-    // Steps 1-2 (signal discovery + qualification) are intentionally empty.
-    // The Perplexity signal scout returned nothing usable and burned run time,
-    // so it was removed; the Phase-2 RSS/news ingester re-enters the pipeline
-    // here by producing signals and passing them through runQualifier
-    // (lib/engine/qualifier.ts, kept for that purpose).
-    const qualified = { actionable: [] as any[], watchlist: [] as any[] };
+    // Step 1: Prospector - find new business signals via ZoomInfo
+    console.log('[Engine] Running Prospector...');
+    const rawSignals = await runProspector();
+    summary.signalsFound = rawSignals.length;
+
+    // Step 2: Qualifier - score against Focus Studio ICP, route actionable/watchlist
+    console.log('[Engine] Running Qualifier...');
+    const qualified = await runQualifier(rawSignals);
+    summary.signalsQualified = qualified.actionable.length;
 
     // Step 3: Cadence Manager - find contacts due for a touch
     console.log('[Engine] Running Cadence Manager...');
