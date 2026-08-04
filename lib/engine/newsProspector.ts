@@ -16,9 +16,16 @@ const SIGNAL_TYPES = [
   'other'
 ];
 
+// Hard time limits so a slow/hung Claude call degrades to zero news signals
+// instead of starving the whole 300s pipeline run (cadence, copywriter,
+// digest all come after this step). First live run stalled >280s here.
+const RESEARCH_TIMEOUT_MS = 120_000;
+const STRUCTURE_TIMEOUT_MS = 60_000;
+
 async function researchStep(): Promise<string> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
+    signal: AbortSignal.timeout(RESEARCH_TIMEOUT_MS),
     headers: {
       'Content-Type': 'application/json',
       'x-api-key': process.env.ANTHROPIC_API_KEY!,
@@ -27,7 +34,7 @@ async function researchStep(): Promise<string> {
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
       max_tokens: 2000,
-      tools: [{ type: 'web_search_20260209', name: 'web_search' }],
+      tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }],
       messages: [{
         role: 'user',
         content: `Search ${SOURCES.join(', ')} for news from the last 3 days about companies in Northern New Jersey or NYC metro that signal a need for new office space: funding rounds, expansions, new offices, executive hires, hiring surges, acquisitions, or commercial real estate broker deals/promotions in the tri-state area. For each item found, note the company name, a one to two sentence summary, the type of signal, the source URL, and the date. List every item you find, even minor ones.`
@@ -46,6 +53,7 @@ async function researchStep(): Promise<string> {
 async function structureStep(researchText: string): Promise<any[]> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
+    signal: AbortSignal.timeout(STRUCTURE_TIMEOUT_MS),
     headers: {
       'Content-Type': 'application/json',
       'x-api-key': process.env.ANTHROPIC_API_KEY!,
