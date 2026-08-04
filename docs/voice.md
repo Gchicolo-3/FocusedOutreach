@@ -49,7 +49,7 @@ Hey [Name],
 Wanted to reach out and introduce myself.
 I work with a team that helps brokers and their clients make faster decisions on office space, bringing clarity to layout, cost, and what's actually possible.
 We usually step in when someone's unsure how a space will work or what it takes to get it done, and we help move things forward quickly.
-Open to connecting and hearing what you're working on.
+Worth a quick call to hear what you're working on?
 Best, George
 ```
 ### Mode 2a: Broker Prospecting

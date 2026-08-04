@@ -118,7 +118,7 @@ Wanted to reach out, I'm with Focus Studio. We help brokers and their clients fi
 
 If you ever have a deal where the client is unsure on the space, happy to jump in and help.
 
-Would be good to connect. Let me know if you're open to grabbing coffee sometime.
+Worth a quick call to hear what you're working on?
 
 Best,
 George"
