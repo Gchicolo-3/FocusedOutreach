@@ -74,7 +74,7 @@ Ask is usually framed around their specific project or timeline if known, more c
 - Subject lines: specific earns opens over generic, reference the deal, property, or angle directly
 **Cold broker text template:**
 ```
-Hey [name], George Chicolo from Focus Studio. We work with brokers across NJ on the design, build, and furniture side when their tenants are getting into a new space. Would love to grab coffee and see if there are any opportunities to work together down the line.
+Hey [name], George Chicolo from Focus Studio. We work with brokers across NJ on the design, build, and furniture side when their tenants are getting into a new space. Coffee sometime to see if there's a fit to work together on deals down the line?
 ```
 **Cold broker email structure:**
 1. Direct intro, no generic opener

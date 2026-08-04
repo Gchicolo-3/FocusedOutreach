@@ -78,10 +78,9 @@ WORDS GEORGE ACTUALLY USES (use these naturally):
 - "Figured I'd reach out"
 - "Happy to help"
 - "If it's useful"
-- "Would be good to connect"
+- "Would be good to connect" (mid message texture only, never as the closing line)
 - "Curious what you're seeing out there"
 - "Happy to jump in"
-- "Let me know if you're open to..."
 
 CONTEXT GEORGE LEANS ON:
 - If there is a broker in the context who made the intro, reference them by first name naturally.

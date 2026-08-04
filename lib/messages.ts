@@ -16,10 +16,10 @@ const leadTemplates: Record<string, string[]> = {
     'Hi {firstName}, {broker} passed along your info re: {opportunity}. We do space visualization that helps tenants pull the trigger faster. Happy to show you a quick example.',
   ],
   '1-email': [
-    "Subject: Quick intro via {broker}\n\nHi {firstName},\n\n{broker} mentioned you're evaluating space for {opportunity}. At Focus Studio, we create photorealistic renderings that help teams visualize exactly how a space will work — before the lease is signed.\n\nWould love to show you a quick example. Do you have 10 minutes this week?\n\nBest,\nGeorge",
+    "Subject: Quick intro via {broker}\n\nHi {firstName},\n\n{broker} mentioned you're evaluating space for {opportunity}. At Focus Studio, we create photorealistic renderings that help teams visualize exactly how a space will work — before the lease is signed.\n\nDo you have 10 minutes this week to see a quick example?\n\nBest,\nGeorge",
   ],
   '1-linkedin': [
-    'Hi {firstName} — {broker} suggested we connect. I run Focus Studio, where we help tenants visualize space before signing. Would love to share how it could help with {opportunity}.',
+    'Hi {firstName} — {broker} suggested we connect. I run Focus Studio, where we help tenants visualize space before signing. Can I share how it could help with {opportunity}?',
   ],
   '2-call': [
     'Follow up with {firstName} at {company} about {opportunity}. Check on timeline and offer updated renderings.',
@@ -43,7 +43,7 @@ const leadTemplates: Record<string, string[]> = {
     "Subject: Helping {company} visualize your next space\n\nHi {firstName},\n\nI'm George from Focus Studio. We create photorealistic renderings that help tenants see how a space will work before signing.\n\nIf {company} is looking at new space, I'd love to show you a quick example.\n\nBest,\nGeorge",
   ],
   '3-linkedin': [
-    'Hi {firstName} — I help commercial tenants visualize space before they sign. If {company} is exploring options, would love to connect.',
+    'Hi {firstName} — I help commercial tenants visualize space before they sign. If {company} is exploring options, worth a quick chat?',
   ],
 };
 
@@ -70,19 +70,19 @@ const brokerNurtureTexts: string[] = [
   // Week 3: Specific project reference
   'Hey {firstName} — just wrapped a project that reminded me of a deal you were working on. Came out great. If you have anything in the pipeline where visuals could help, let me know.',
   // Week 4: Coffee ask
-  "Hey {firstName} — been a minute. Would love to grab coffee and catch up. I've got some new work to show you and always like hearing what you're working on at {firmName}. You free this week or next?",
+  "Hey {firstName} — been a minute. Let's grab coffee and catch up. I've got some new work to show you and always like hearing what you're working on at {firmName}. You free this week or next?",
 ];
 
 const brokerNurtureEmails: string[] = [
   'Subject: Quick thank you + availability\n\nHi {firstName},\n\nWanted to follow up and say thanks again for the work we have done together. Just a heads up that I have availability this month if any of your tenants need space visualization.\n\nTurnaround is typically 48 hours and it is completely free for the tenant — makes your deals close faster.\n\nBest,\nGeorge',
   "Subject: What are you seeing in the market?\n\nHi {firstName},\n\nCurious what you're hearing out there — seems like the market is shifting. If any of your tenants are on the fence about a space, our renderings can help them pull the trigger.\n\nAlways happy to be a resource for your deals at {firmName}.\n\nBest,\nGeorge",
   "Subject: Recent project that reminded me of your deals\n\nHi {firstName},\n\nJust finished a project that reminded me of the work we've done together. Happy to share if you're interested — it might spark an idea for a current deal.\n\nLet me know if you have anything in the pipeline where visuals could help.\n\nBest,\nGeorge",
-  "Subject: Coffee this week?\n\nHi {firstName},\n\nIt's been a while — would love to catch up over coffee. I have some new work to show you and always enjoy hearing what you're working on at {firmName}.\n\nAre you free this week or next?\n\nBest,\nGeorge",
+  "Subject: Coffee this week?\n\nHi {firstName},\n\nLet's catch up over coffee. I have some new work to show you and always enjoy hearing what you're working on at {firmName}.\n\nAre you free this week or next?\n\nBest,\nGeorge",
 ];
 
 const brokerLinkedInMessages: string[] = [
   'Hey {firstName} — wanted to stay in touch. If any of your tenants at {firmName} need space visualization, happy to be a resource. Hope all is well.',
-  'Hey {firstName} — been a while since we connected. Would love to catch up when you have a minute. Any interesting deals at {firmName} lately?',
+  "Hey {firstName} — been a while since we connected. Let's catch up when you have a minute. Any interesting deals at {firmName} lately?",
   '{firstName} — saw some activity in the market and thought of you. Let me know if any of your tenants could use help visualizing space.',
   'Hey {firstName} — always happy to help on deals when I can. Let me know if coffee or a quick call works in the next couple weeks.',
 ];
@@ -188,5 +188,5 @@ export function getPartnerLinkedIn(partner: Partner): string {
 
 export function getColdBrokerIntro(brokerName: string, firm: string): string {
   const first = firstName(brokerName);
-  return `Hey ${first} — George Chicolo here from Focus Studio. I work with a handful of brokers in the area doing free 3D space renderings for their tenant clients. Helps tenants visualize the space and pull the trigger faster on deals. Would love to be a resource for your deals at ${firm}. Worth a quick chat?`;
+  return `Hey ${first} — George Chicolo here from Focus Studio. I work with a handful of brokers in the area doing free 3D space renderings for their tenant clients. Helps tenants visualize the space and pull the trigger faster on deals. Happy to be a resource for your deals at ${firm}. Worth a quick chat?`;
 }
