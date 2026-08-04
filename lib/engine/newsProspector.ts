@@ -81,9 +81,13 @@ async function structureStep(researchText: string): Promise<any[]> {
   }
 }
 
+// The signals table check constraint only accepts '1' | '2' | '3'.
+// Broker-news types get '3' to match the tiering already in the table.
 function tierFor(signalType: string): string {
   const tier1 = ['funding_round', 'executive_hire', 'expansion_announcement', 'acquisition'];
-  return tier1.includes(signalType) ? 'tier_1' : 'tier_2';
+  if (tier1.includes(signalType)) return '1';
+  if (signalType.startsWith('broker_')) return '3';
+  return '2';
 }
 
 export async function runNewsProspector(): Promise<any[]> {

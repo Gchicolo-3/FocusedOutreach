@@ -68,9 +68,10 @@ async function ziPost(path: string, body: any): Promise<any> {
   return res.json();
 }
 
+// The signals table check constraint only accepts '1' | '2' | '3'.
 function tierFor(signalType: string): string {
   const tier1 = ['funding_round', 'executive_hire', 'expansion_announcement', 'acquisition'];
-  return tier1.includes(signalType) ? 'tier_1' : 'tier_2';
+  return tier1.includes(signalType) ? '1' : '2';
 }
 
 function extractScoops(result: any): any[] {
