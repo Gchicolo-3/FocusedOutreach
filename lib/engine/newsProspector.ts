@@ -34,7 +34,7 @@ async function researchStep(): Promise<string> {
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
       max_tokens: 2000,
-      tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }],
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
       messages: [{
         role: 'user',
         content: `Search ${SOURCES.join(', ')} for news from the last 3 days about companies in Northern New Jersey or NYC metro that signal a need for new office space: funding rounds, expansions, new offices, executive hires, hiring surges, acquisitions, or commercial real estate broker deals/promotions in the tri-state area. For each item found, note the company name, a one to two sentence summary, the type of signal, the source URL, and the date. List every item you find, even minor ones.`
