@@ -348,6 +348,126 @@ export async function setEngineDraftStatus(
   if (error) console.error('setEngineDraftStatus:', error);
 }
 
+// ============ SIGNAL DRAFT REVIEW QUEUE (/review) ============
+// Pending drafts that came from a signal (inner join — the signal-less
+// check_in backlog stays out of this queue on purpose). These were written by
+// the old copywriter engine before the audit pipeline existed, so /review
+// runs each one through the audit before showing it.
+export type SignalDraft = {
+  id: string;
+  contactId: string | null;
+  contactTable: string | null;
+  contactName: string | null;
+  contactCompany: string | null;
+  channel: string;
+  subject: string | null;
+  body: string; // edited_body wins if George already tweaked it
+  originalBody: string;
+  draftType: string | null;
+  createdAt: string;
+  signalType: string;
+  tierRecommendation: string;
+  signalCompany: string;
+  signalSummary: string;
+};
+
+export async function getSignalDraftQueue(): Promise<SignalDraft[]> {
+  const { data, error } = await supabase
+    .from('drafts')
+    .select(
+      '*, signal:signals!inner(signal_type, tier_recommendation, company_name, summary)'
+    )
+    .eq('status', 'pending');
+  if (error) { noteLoadError('getSignalDraftQueue', error); return []; }
+  const rows = (data || []).map((r) => ({
+    id: r.id as string,
+    contactId: r.contact_id ?? null,
+    contactTable: r.contact_table ?? null,
+    contactName: r.contact_name ?? null,
+    contactCompany: r.contact_company ?? null,
+    channel: r.channel as string,
+    subject: r.subject ?? null,
+    body: (r.edited_body || r.body) as string,
+    originalBody: r.body as string,
+    draftType: r.draft_type ?? null,
+    createdAt: r.created_at as string,
+    signalType: r.signal?.signal_type ?? '',
+    tierRecommendation: r.signal?.tier_recommendation ?? '9',
+    signalCompany: r.signal?.company_name || r.contact_company || '',
+    signalSummary: r.signal?.summary || r.signal_summary || '',
+  }));
+  // Hottest first: tier 1 before 2 before 3 (stored as text, single digit),
+  // oldest first within a tier.
+  rows.sort((a, b) =>
+    a.tierRecommendation !== b.tierRecommendation
+      ? a.tierRecommendation < b.tierRecommendation ? -1 : 1
+      : a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0
+  );
+  return rows;
+}
+
+// Contact info for the queue's cards, only for ids that resolve to a real row
+// in their contact table. Keyed `${table}:${id}`.
+export type ResolvedContact = { name: string; email: string | null; phone: string | null };
+
+export async function getContactsForSignalDrafts(
+  drafts: SignalDraft[]
+): Promise<Map<string, ResolvedContact>> {
+  const byTable = new Map<string, string[]>();
+  for (const d of drafts) {
+    if (!d.contactId || !d.contactTable) continue;
+    byTable.set(d.contactTable, [...(byTable.get(d.contactTable) || []), d.contactId]);
+  }
+  const out = new Map<string, ResolvedContact>();
+  const queries: PromiseLike<void>[] = [];
+  const run = (table: string, cols: string, toContact: (r: Record<string, unknown>) => ResolvedContact) => {
+    const ids = byTable.get(table);
+    if (!ids?.length) return;
+    queries.push(
+      supabase.from(table).select(cols).in('id', ids).then(({ data, error }) => {
+        if (error) { console.error(`getContactsForSignalDrafts ${table}:`, error); return; }
+        for (const r of (data || []) as unknown as Record<string, unknown>[]) {
+          out.set(`${table}:${r.id}`, toContact(r));
+        }
+      })
+    );
+  };
+  const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  run('brokers', 'id, first_name, last_name, email, phone, mobile', (r) => ({
+    name: `${str(r.first_name) || ''} ${str(r.last_name) || ''}`.trim(),
+    email: str(r.email), phone: str(r.mobile) || str(r.phone),
+  }));
+  run('partners', 'id, first_name, last_name, email, phone', (r) => ({
+    name: `${str(r.first_name) || ''} ${str(r.last_name) || ''}`.trim(),
+    email: str(r.email), phone: str(r.phone),
+  }));
+  run('prospects', 'id, contact, email, phone', (r) => ({
+    name: str(r.contact) || '', email: str(r.email), phone: str(r.phone),
+  }));
+  run('cold_brokers', 'id, name, email, phone, mobile', (r) => ({
+    name: str(r.name) || '', email: str(r.email), phone: str(r.mobile) || str(r.phone),
+  }));
+  await Promise.all(queries);
+  return out;
+}
+
+// Resolve a reviewed signal draft. Approve persists the text George actually
+// approved (audited, possibly hand-edited) so the record matches what was
+// copied; the original body column is never overwritten.
+export async function resolveSignalDraft(
+  id: string,
+  status: 'approved' | 'killed',
+  finalText?: { subject: string | null; body: string }
+): Promise<void> {
+  const update: Record<string, unknown> = { status };
+  if (status === 'approved' && finalText) {
+    update.edited_body = finalText.body;
+    if (finalText.subject) update.subject = finalText.subject;
+  }
+  const { error } = await supabase.from('drafts').update(update).eq('id', id);
+  if (error) console.error('resolveSignalDraft:', error);
+}
+
 // ============ VOICE SAMPLES ============
 export type VoiceSample = { id: string; channel: string | null; text: string };
 
