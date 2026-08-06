@@ -118,12 +118,13 @@ function editorSystemPrompt(mode: ReplyMode, channel: ReplyChannel): string {
    functions as a clear next step. A statement of the sender's own
    willingness or availability FAILS this check even when it mentions the
    same activity a real ask would: "happy to grab coffee", "would love to
-   chat", "let me know if you'd be open to...", "coffee sometime would be
-   worth it" all fail. Trailing off with no close at all also fails. The
-   test is NOT whether coffee or a call is mentioned — it's whether the
-   recipient has something concrete to say yes or no to. When you fix this,
-   rewrite the close into a direct question ("Coffee at Bellworks?"), never
-   into a shortened version of the same passive structure.`;
+   chat", "let me know if you'd be open to...", "open to a coffee or lunch",
+   "coffee sometime would be worth it" all fail. Trailing off with no close
+   at all also fails. The test is NOT whether coffee or a call is mentioned —
+   it's whether the recipient has something concrete to say yes or no to.
+   When you fix this, rewrite the close into a direct question ("Coffee at
+   Bellworks?", "Coffee or lunch next week?"), never into a shortened
+   version of the same passive structure.`;
 
   const jargonCheck =
     mode === 'client_prospecting'
@@ -164,7 +165,11 @@ ${closingCheck}
    ask, not a fabricated detail.
 3. GENERIC AI PHRASING: stock transitions, unearned enthusiasm, restating the
    obvious, anything that reads like AI output instead of something a real
-   person would type.
+   person would type. Also flag a dropped subject pronoun ("Saw the news
+   about...", "Spend a lot of time with...") used on more than one sentence
+   per message — once is George's real texture, stacked across consecutive
+   sentences it reads as a checklist; restore the pronoun after the first
+   use.
 4. BANNED PHRASE NEAR MISSES: phrasing that means the same thing as a banned
    phrase without matching it exactly (e.g. "just wanted to see how things
    are" is "touching base" in disguise). The exact-match scan already ran;
