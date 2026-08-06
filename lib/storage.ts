@@ -369,13 +369,15 @@ export type SignalDraft = {
   tierRecommendation: string;
   signalCompany: string;
   signalSummary: string;
+  signalSourceUrl: string | null;
+  signalSourceName: string | null;
 };
 
 export async function getSignalDraftQueue(): Promise<SignalDraft[]> {
   const { data, error } = await supabase
     .from('drafts')
     .select(
-      '*, signal:signals!inner(signal_type, tier_recommendation, company_name, summary)'
+      '*, signal:signals!inner(signal_type, tier_recommendation, company_name, summary, source_url, source_name)'
     )
     .eq('status', 'pending');
   if (error) { noteLoadError('getSignalDraftQueue', error); return []; }
@@ -395,6 +397,8 @@ export async function getSignalDraftQueue(): Promise<SignalDraft[]> {
     tierRecommendation: r.signal?.tier_recommendation ?? '9',
     signalCompany: r.signal?.company_name || r.contact_company || '',
     signalSummary: r.signal?.summary || r.signal_summary || '',
+    signalSourceUrl: r.signal?.source_url ?? null,
+    signalSourceName: r.signal?.source_name ?? null,
   }));
   // Hottest first: tier 1 before 2 before 3 (stored as text, single digit),
   // oldest first within a tier.

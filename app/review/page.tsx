@@ -315,6 +315,19 @@ export default function ReviewQueuePage() {
                   }}
                 >
                   {current.signalSummary || 'No signal summary recorded.'}
+                  {current.signalSourceUrl && (
+                    <>
+                      {' '}
+                      <a
+                        href={current.signalSourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: C.amber, textDecoration: 'underline' }}
+                      >
+                        {current.signalSourceName || 'Source'} ↗
+                      </a>
+                    </>
+                  )}
                 </div>
               </div>
 
