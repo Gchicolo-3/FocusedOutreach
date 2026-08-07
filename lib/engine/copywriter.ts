@@ -15,7 +15,6 @@ ${GEORGE_VOICE_CORE}
 
 ENGINE DRAFTING NOTES (in addition to the core rules above):
 - Lead with something useful or relevant to the recipient. Make it about them, not Focus Studio.
-- Use "would love to connect" rather than "happy to connect."
 - No bold formatting.
 - Do not open by pointing out how long it has been since you last spoke. If an opener direction is given in the prompt, follow it.
 

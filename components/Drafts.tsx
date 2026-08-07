@@ -10,8 +10,10 @@ import {
   getPartners,
   getProspects,
   getColdBrokers,
+  getSignalSources,
   logTouch,
   type EngineDraft,
+  type SignalSource,
 } from '@/lib/storage';
 import MessageCard from '@/components/MessageCard';
 import { C, F, labelMono, btnGhost, pillStyle } from '@/lib/design';
@@ -42,6 +44,7 @@ function toTouchChannel(ch: string): Channel {
 export default function Drafts() {
   const [drafts, setDrafts] = useState<EngineDraft[]>([]);
   const [info, setInfo] = useState<Map<string, ContactInfo>>(new Map());
+  const [sources, setSources] = useState<Map<string, SignalSource>>(new Map());
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -53,6 +56,7 @@ export default function Drafts() {
       getProspects(),
       getColdBrokers(),
     ]);
+    setSources(await getSignalSources(d.map((x) => x.signalId).filter((x): x is string => !!x)));
     const m = new Map<string, ContactInfo>();
     brokers.forEach((b) => m.set(`brokers:${b.id}`, { email: b.email, phone: b.mobile || b.phone }));
     partners.forEach((p) => m.set(`partners:${p.id}`, { email: p.email, phone: p.phone }));
@@ -147,6 +151,19 @@ export default function Drafts() {
                   }}
                 >
                   {d.signalSummary}
+                  {d.signalId && sources.get(d.signalId) && (
+                    <>
+                      {' '}
+                      <a
+                        href={sources.get(d.signalId)!.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: C.amber, textDecoration: 'underline' }}
+                      >
+                        {sources.get(d.signalId)!.name} ↗
+                      </a>
+                    </>
+                  )}
                 </div>
               )}
 
