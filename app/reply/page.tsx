@@ -257,6 +257,18 @@ export default function ReplyPage() {
 
   async function generate() {
     if (!incomingEmail.trim() || generating) return;
+    // A typed-but-unpicked contact search must not fall through to a draft
+    // with no contact attached (that silent path left most reply_drafts rows
+    // with contact_id null). If the query matches anything, force a pick or
+    // an explicit clear before generating.
+    if (!contact && contactQuery.trim().length >= 2 && contactMatches.length > 0) {
+      setError(
+        contactMatches.length === 1
+          ? `"${contactQuery.trim()}" matches a contact — pick it below, or clear the search to draft without one`
+          : `"${contactQuery.trim()}" matches ${contactMatches.length} contacts — pick one below, or clear the search to draft without one`
+      );
+      return;
+    }
     setGenerating(true);
     setError('');
     try {

@@ -51,13 +51,15 @@ function isContactTable(v: unknown): v is ContactTable {
 }
 
 // Builds the CRM context block for a connected contact: the row itself plus
-// recent touch_log entries. Returns null when the row can't be loaded — the
-// draft still generates, just without CRM grounding.
+// recent touch_log entries, and the contact's first name so [name]-style
+// placeholders in the output can be filled with the real recipient. Returns
+// null when the row can't be loaded — the draft still generates, just without
+// CRM grounding.
 async function fetchContactContext(
   db: SupabaseClient,
   table: ContactTable,
   id: string
-): Promise<string | null> {
+): Promise<{ text: string; firstName: string | null } | null> {
   const { data: row, error } = await db.from(table).select('*').eq('id', id).maybeSingle();
   if (error || !row) {
     if (error) console.error('[reply-generator] contact fetch failed:', error.message);
@@ -65,6 +67,15 @@ async function fetchContactContext(
   }
   const r = row as Record<string, unknown>;
   const s = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+
+  let contactFirstName: string | null = null;
+  if (table === 'brokers' || table === 'partners') {
+    contactFirstName = s(r.first_name);
+  } else if (table === 'prospects') {
+    contactFirstName = s(r.contact)?.split(' ')[0] || null;
+  } else {
+    contactFirstName = s(r.name)?.split(' ')[0] || null;
+  }
 
   const lines: string[] = [];
   if (table === 'brokers') {
@@ -114,7 +125,19 @@ async function fetchContactContext(
           .join('; ')
     );
   }
-  return lines.join('\n');
+  return { text: lines.join('\n'), firstName: contactFirstName };
+}
+
+// [name] / [First Name] style placeholders that templates and prompt examples
+// use for an unknown recipient. Shipping one in a real draft is a bug: fill it
+// from the connected contact when possible, otherwise fail loudly via the
+// audit warning so it can't be copied unnoticed.
+function hasNamePlaceholder(text: string): boolean {
+  return /\[\s*(?:first\s*name|name)\s*\]/i.test(text);
+}
+
+function fillNamePlaceholders(text: string, firstName: string): string {
+  return text.replace(/\[\s*(?:first\s*name|name)\s*\]/gi, firstName);
 }
 
 // Real messages George has written, same anchor the compose route uses.
@@ -203,8 +226,15 @@ export async function POST(req: NextRequest) {
   const db = dbUrl && dbKey ? createClient(dbUrl, dbKey) : null;
   const contactTable = isContactTable(body.contactTable) ? body.contactTable : null;
   const contactId = typeof body.contactId === 'string' && body.contactId.trim() ? body.contactId.trim() : null;
-  const crmContext =
+  const contactCtx =
     db && contactTable && contactId ? await fetchContactContext(db, contactTable, contactId) : null;
+  const crmContext = contactCtx?.text ?? null;
+  const contactFirstName = contactCtx?.firstName ?? null;
+  // Applied to every draft variant the pipeline produces (initial, banned
+  // phrase rewrites, editor revisions), so a placeholder can't survive one
+  // path and not another.
+  const fillName = (text: string) =>
+    contactFirstName ? fillNamePlaceholders(text, contactFirstName) : text;
 
   const samples = await fetchVoiceSamples(channel);
   const voiceBlock = samples.length
@@ -269,7 +299,7 @@ export async function POST(req: NextRequest) {
   try {
     let generatedReply: string;
     if (isAuditOnly) {
-      generatedReply = sanitizeReply(body.auditDraft!.trim());
+      generatedReply = fillName(sanitizeReply(body.auditDraft!.trim()));
     } else {
       const response = await client.messages.create({
         model: 'claude-sonnet-4-6',
@@ -285,7 +315,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'No text generated' }, { status: 500 });
       }
 
-      generatedReply = sanitizeReply(raw);
+      generatedReply = isReview ? sanitizeReply(raw) : fillName(sanitizeReply(raw));
     }
 
     // ===== Audit pass (fresh generations and audit-only; the review pass is
@@ -318,7 +348,7 @@ export async function POST(req: NextRequest) {
             ],
           });
           const rb = retry.content.find((b) => b.type === 'text');
-          const rewritten = rb && rb.type === 'text' ? sanitizeReply(rb.text.trim()) : '';
+          const rewritten = rb && rb.type === 'text' ? fillName(sanitizeReply(rb.text.trim())) : '';
           if (!rewritten) break;
           generatedReply = rewritten;
         } catch (e) {
@@ -346,7 +376,7 @@ export async function POST(req: NextRequest) {
         crmContext: crmContext || undefined,
       });
       if (verdict && !verdict.approved && verdict.revisedDraft) {
-        generatedReply = sanitizeReply(verdict.revisedDraft);
+        generatedReply = fillName(sanitizeReply(verdict.revisedDraft));
         findings.push(...verdict.findings);
         // The editor's revision goes back through the mechanical check so a
         // revision can never smuggle a banned phrase past Layer 1.
@@ -375,6 +405,17 @@ export async function POST(req: NextRequest) {
       else passed = true;
 
       audit = { passed, checked: auditCheckedSummary(mode), findings, warning };
+
+      // A placeholder that survived to here means no contact was connected to
+      // fill it. Never let it ship silently: the warning renders red in the
+      // UI with "Do not copy as is".
+      if (hasNamePlaceholder(generatedReply)) {
+        const msg =
+          'unfilled [name] placeholder in the draft — connect a contact or fill in the real name before sending';
+        audit.findings.push(msg);
+        audit.warning = audit.warning ? `${audit.warning}; ${msg}` : msg;
+        audit.passed = false;
+      }
     }
 
     // Save to history. A failed write shouldn't cost George the reply he just

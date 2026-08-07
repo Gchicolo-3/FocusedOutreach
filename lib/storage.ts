@@ -311,6 +311,7 @@ export type EngineDraft = {
   subject: string | null;
   body: string;
   draftType: string | null;
+  signalId: string | null;
   signalSummary: string | null;
 };
 
@@ -334,8 +335,30 @@ export async function getPendingEngineDrafts(limit = 60): Promise<EngineDraft[]>
     subject: r.subject,
     body: r.edited_body || r.body,
     draftType: r.draft_type,
+    signalId: r.signal_id,
     signalSummary: r.signal_summary,
   }));
+}
+
+// Source attribution for signals (the article the signal came from), keyed by
+// signal id. The columns have existed since the prospectors started writing
+// them; this just surfaces them in the UI.
+export type SignalSource = { url: string; name: string };
+
+export async function getSignalSources(signalIds: string[]): Promise<Map<string, SignalSource>> {
+  const ids = signalIds.filter(Boolean);
+  const out = new Map<string, SignalSource>();
+  if (!ids.length) return out;
+  const { data, error } = await supabase
+    .from('signals')
+    .select('id, source_url, source_name')
+    .in('id', ids);
+  if (error) { console.error('getSignalSources:', error); return out; }
+  for (const r of data || []) {
+    if (!r.source_url) continue;
+    out.set(r.id, { url: r.source_url, name: r.source_name || 'Source' });
+  }
+  return out;
 }
 
 export async function setEngineDraftStatus(
