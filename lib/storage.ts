@@ -8,6 +8,7 @@ import { computeNextDue, computeStatus } from './cadence';
 export type { ActivityRecord } from './parseCSV';
 import type { ActivityRecord } from './parseCSV';
 import { normalizeContactKey } from './parseCSV';
+import { canonicalKey } from './identity';
 
 // Records the last data-load failure so the UI can surface a real error instead
 // of silently rendering an empty dashboard when a Supabase read fails.
@@ -47,6 +48,7 @@ export async function setProspects(leads: Lead[]): Promise<void> {
     status: l.status, priority: l.priority, comments: l.comments,
     tier: l.tier, broker: l.broker || null, channel: l.channel,
     last_touch: l.lastTouch || null, email: l.email || null, phone: l.phone || null,
+    canonical_key: canonicalKey(l.contact, l.company) || null,
   }));
   // Upsert in batches of 100
   for (let i = 0; i < rows.length; i += 100) {
@@ -80,6 +82,7 @@ export async function setBrokers(brokers: Broker[]): Promise<void> {
     deal_count: b.dealCount, deal_names: b.dealNames,
     last_touch: b.lastTouch, next_due: b.nextDue,
     notes: b.notes, status: b.status,
+    canonical_key: canonicalKey(`${b.firstName} ${b.lastName}`, b.firm) || null,
   }));
   for (let i = 0; i < rows.length; i += 100) {
     const { error } = await supabase.from('brokers').upsert(rows.slice(i, i + 100));
@@ -101,6 +104,7 @@ export async function updateBroker(id: string, updates: Partial<Broker>): Promis
     tier: merged.tier, deal_count: merged.dealCount, deal_names: merged.dealNames,
     last_touch: merged.lastTouch, next_due: merged.nextDue,
     notes: merged.notes, status: merged.status,
+    canonical_key: canonicalKey(`${merged.firstName} ${merged.lastName}`, merged.firm) || null,
   });
   if (error) console.error(error);
 }
@@ -133,6 +137,7 @@ export async function setPartners(partners: Partner[]): Promise<void> {
     tier: p.tier, referral_count: p.referralCount,
     last_touch: p.lastTouch, next_due: p.nextDue, notes: p.notes,
     email: p.email || null, phone: p.phone || null,
+    canonical_key: canonicalKey(`${p.firstName} ${p.lastName}`, p.company) || null,
   }));
   for (let i = 0; i < rows.length; i += 100) {
     const { error } = await supabase.from('partners').upsert(rows.slice(i, i + 100));
@@ -152,6 +157,7 @@ export async function updatePartner(id: string, updates: Partial<Partner>): Prom
     tier: merged.tier, referral_count: merged.referralCount,
     last_touch: merged.lastTouch, next_due: merged.nextDue, notes: merged.notes,
     email: merged.email || null, phone: merged.phone || null,
+    canonical_key: canonicalKey(`${merged.firstName} ${merged.lastName}`, merged.company) || null,
   });
 }
 
@@ -170,7 +176,11 @@ export async function getColdBrokers(): Promise<ColdBroker[]> {
 
 export async function setColdBrokers(brokers: ColdBroker[]): Promise<void> {
   if (brokers.length === 0) return;
-  const { error } = await supabase.from('cold_brokers').upsert(brokers);
+  const rows = brokers.map(b => ({
+    ...b,
+    canonical_key: canonicalKey(b.name, b.firm) || null,
+  }));
+  const { error } = await supabase.from('cold_brokers').upsert(rows);
   if (error) console.error(error);
 }
 
@@ -525,6 +535,14 @@ export async function logActivity(params: {
       status: 'logged',
       priority: existing?.priority || '',
       comments: mergedComments,
+      // The caller knows exactly which contact this touch belongs to — record
+      // the resolved identity so the row never joins the orphan pile.
+      canonical_key: canonicalKey(params.fullName, params.company) || null,
+      contact_table: params.contactType === 'broker' ? 'brokers' : 'partners',
+      contact_id: params.contactId,
+      match_status: 'matched',
+      match_method: 'logged',
+      match_confidence: 1,
     });
     if (error) console.error('logActivity error:', error);
   }
