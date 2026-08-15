@@ -15,6 +15,7 @@ const tabs = [
   { id: 'partners', label: 'Referral Partners' },
   { id: 'not-worth-pursuing', label: 'Not Worth Pursuing' },
   { id: 'blast-only', label: 'Blast Only' },
+  { id: 'import-review', label: 'Import Review' },
 ] as const;
 
 export type TabId = (typeof tabs)[number]['id'];

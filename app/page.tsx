@@ -6,6 +6,7 @@ import Header from '@/components/Header';
 import DoThisNow from '@/components/DoThisNow';
 import Drafts from '@/components/Drafts';
 import RecordsView, { RecordTab } from '@/components/RecordsView';
+import ImportReview from '@/components/ImportReview';
 import ExportCSV from '@/components/ExportCSV';
 import RunEngineButton from '@/components/RunEngineButton';
 import RunClassifierButton from '@/components/RunClassifierButton';
@@ -56,6 +57,7 @@ export default function Home() {
             changes the filter over the already-loaded dataset — no reload,
             no navigation. */}
         {isRecordTab && <RecordsView key={refreshKey} view={tab as RecordTab} />}
+        {tab === 'import-review' && <ImportReview key={refreshKey} />}
       </main>
     </div>
   );
