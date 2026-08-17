@@ -24,6 +24,7 @@ export const BUCKET_OPTIONS: Array<{ value: Bucket; label: string }> = [
   { value: 'cold', label: 'Cold' },
   { value: 'not_worth_pursuing', label: 'Not Worth Pursuing' },
   { value: 'blast_only', label: 'Blast Only' },
+  { value: 'monthly_outreach', label: 'Monthly Outreach' },
 ];
 
 // ============ PARTIAL UPDATES ============

@@ -19,6 +19,7 @@ const recordTabs: ReadonlyArray<TabId> = [
   'partners',
   'not-worth-pursuing',
   'blast-only',
+  'monthly-outreach',
 ];
 
 export default function Home() {

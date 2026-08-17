@@ -162,39 +162,118 @@ export async function findBrokerForSignal(companyName: string, summary: string) 
   );
 }
 
-// Batch lookups for the cadence manager's crossing-over checks. The previous
-// per-contact versions ran two awaited queries inside the contact loop
-// (hundreds of round-trips per run) and were a large share of why runs hit
-// Vercel's function time limit.
+// ============================================================
+// TOUCH EVIDENCE (recency guard)
+// ============================================================
 
-// Map of contact_id -> most recent touch date within the last 30 days.
-export async function getRecentlyTouchedContacts(): Promise<Map<string, string>> {
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const cutoff = thirtyDaysAgo.toISOString().split('T')[0];
+// Everything the recency guard knows about a contact's real history, merged
+// from touch_log, identity-linked activities rows (Phase 1 linkage), and
+// sent drafts. Batched: three table scans per run, never per-contact queries.
+export type TouchEvidence = {
+  lastTouch: string | null;   // ISO date of the most recent touch of any kind
+  lastTouchKind: string | null; // 'touch_log' | activity_type | 'sent draft'
+  spoke: boolean;             // two-way contact evidence from the logs
+  outboundCount: number;      // distinct outreach dates (cold 3-strike counter)
+};
 
-  const { data, error } = await supabase
-    .from('touch_log')
-    .select('contact_id, date')
-    .gte('date', cutoff);
+// Activity text that proves an actual conversation happened, not just an
+// attempt. Voicemails / no-answers are explicitly NOT evidence.
+const ENGAGED_RE = /meeting|\bmet\b|lunch|coffee|tour|spoke|talked|caught up|great (call|chat)|walked through/i;
+const ATTEMPT_ONLY_RE = /left (a )?(vm|voicemail|message)|\blvm\b|no answer|didn'?t (pick|answer)|voicemail/i;
 
-  if (error) throw new Error(`getRecentlyTouchedContacts: ${error.message}`);
+export async function getTouchEvidence(): Promise<Map<string, TouchEvidence>> {
+  const evidence = new Map<string, TouchEvidence>();
+  const get = (id: string): TouchEvidence => {
+    let e = evidence.get(id);
+    if (!e) {
+      e = { lastTouch: null, lastTouchKind: null, spoke: false, outboundCount: 0 };
+      evidence.set(id, e);
+    }
+    return e;
+  };
+  const outboundDates = new Map<string, Set<string>>();
+  const addTouch = (id: string, dateIso: string | null, kind: string) => {
+    if (!id || !dateIso) return;
+    const e = get(id);
+    if (!e.lastTouch || dateIso > e.lastTouch) {
+      e.lastTouch = dateIso;
+      e.lastTouchKind = kind;
+    }
+    let dates = outboundDates.get(id);
+    if (!dates) {
+      dates = new Set();
+      outboundDates.set(id, dates);
+    }
+    dates.add(dateIso);
+  };
 
-  const touched = new Map<string, string>();
-  for (const row of data || []) {
-    if (!row.contact_id) continue;
-    const prev = touched.get(row.contact_id);
-    if (!prev || row.date > prev) touched.set(row.contact_id, row.date);
+  const [touches, activities, sentDrafts] = await Promise.all([
+    supabase.from('touch_log').select('contact_id, date, spoke'),
+    supabase
+      .from('activities')
+      .select('contact_id, date, activity_type, subject, comments')
+      .eq('match_status', 'matched')
+      .not('contact_id', 'is', null),
+    supabase
+      .from('drafts')
+      .select('contact_id, sent_at')
+      .eq('status', 'sent')
+      .not('contact_id', 'is', null),
+  ]);
+  if (touches.error) throw new Error(`getTouchEvidence touch_log: ${touches.error.message}`);
+  if (activities.error) throw new Error(`getTouchEvidence activities: ${activities.error.message}`);
+  if (sentDrafts.error) throw new Error(`getTouchEvidence drafts: ${sentDrafts.error.message}`);
+
+  for (const t of touches.data || []) {
+    if (!t.contact_id) continue;
+    addTouch(t.contact_id, toIsoDate(t.date), 'touch_log');
+    if (t.spoke) get(t.contact_id).spoke = true;
   }
-  return touched;
+
+  for (const a of activities.data || []) {
+    if (!a.contact_id) continue;
+    addTouch(a.contact_id, toIsoDate(a.date), a.activity_type || 'activity');
+    const text = `${a.activity_type || ''} ${a.subject || ''} ${a.comments || ''}`;
+    if (ENGAGED_RE.test(text) && !(ATTEMPT_ONLY_RE.test(text) && !/meeting|\bmet\b|lunch|coffee/i.test(text))) {
+      get(a.contact_id).spoke = true;
+    }
+  }
+
+  for (const d of sentDrafts.data || []) {
+    if (!d.contact_id) continue;
+    addTouch(d.contact_id, toIsoDate(d.sent_at), 'sent draft');
+  }
+
+  for (const [id, dates] of outboundDates) {
+    get(id).outboundCount = dates.size;
+  }
+  return evidence;
 }
 
-// Note: the former getOpenTaskContactIds() crossing-over check was removed.
-// It queried activities.contact_id (a column that does not exist — the table
-// is keyed by contact_key) for status = 'pending' (a status the data never
-// sets; every activities row has an empty status), so it could only ever
-// throw or return nothing. touch_log recency above is the crossing-over
-// signal.
+// Contacts parked in the monthly-outreach bucket (cold, 3+ unanswered
+// touchpoints). They're excluded from the normal cadence gates, so the
+// engine fetches them explicitly for the monthly cold cycle.
+export async function getMonthlyOutreachContacts() {
+  const [brokers, partners] = await Promise.all([
+    supabase.from('brokers').select('*').eq('bucket', 'monthly_outreach'),
+    supabase.from('partners').select('*').eq('bucket', 'monthly_outreach'),
+  ]);
+  if (brokers.error) throw new Error(`getMonthlyOutreachContacts brokers: ${brokers.error.message}`);
+  if (partners.error) throw new Error(`getMonthlyOutreachContacts partners: ${partners.error.message}`);
+  return {
+    brokers: brokers.data || [],
+    partners: partners.data || [],
+  };
+}
+
+export async function updateContactBucket(
+  table: 'brokers' | 'partners',
+  id: string,
+  bucket: string
+): Promise<void> {
+  const { error } = await supabase.from(table).update({ bucket }).eq('id', id);
+  if (error) console.error(`updateContactBucket ${table}/${id}:`, error.message);
+}
 
 // ============================================================
 // SIGNALS
