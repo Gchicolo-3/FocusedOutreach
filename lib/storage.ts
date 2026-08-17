@@ -323,6 +323,10 @@ export type EngineDraft = {
   draftType: string | null;
   signalId: string | null;
   signalSummary: string | null;
+  // Audit outcome: true = clean/auto-corrected, false = an issue survived,
+  // null = not audited yet.
+  auditPassed: boolean | null;
+  auditFindings: string | null;
 };
 
 // Pending drafts the engine generated, for the review queue. edited_body wins
@@ -347,6 +351,8 @@ export async function getPendingEngineDrafts(limit = 60): Promise<EngineDraft[]>
     draftType: r.draft_type,
     signalId: r.signal_id,
     signalSummary: r.signal_summary,
+    auditPassed: r.audit_passed ?? null,
+    auditFindings: r.audit_findings ?? null,
   }));
 }
 
