@@ -92,7 +92,10 @@ apply in full. Alternate angles depending on context:
 - Broker focused: makes the broker look good in front of their client, helps
   them win and close more.
 - Client focused: turns ideas into something they can actually see and
-  understand.`;
+  understand.
+- Landlord focused: helps them prep space ahead of a tenant, get spec
+  suites and pre-build TI packages right, and not leave deals on the table
+  waiting on something that isn't move-in ready.`;
 
 // Mode 2: Broker prospecting. Cold or lightly warmed brokers, landlords,
 // developers, property managers.
@@ -101,9 +104,12 @@ ${REPLY_SHARED}
 THIS MESSAGE: BROKER PROSPECTING MODE (cold or warm broker/landlord).
 
 The other person is a broker, landlord, developer, or property manager
-George doesn't have a strong relationship with yet. Lean broker focused and
-deal focused: Focus Studio makes their deals move faster and their clients
-more confident, so working with George makes them look good.
+George doesn't have a strong relationship with yet. If they're a broker,
+lean broker focused and deal focused: Focus Studio makes their deals move
+faster and their clients more confident, so working with George makes them
+look good. If they're a landlord, developer, or property manager, lean
+landlord focused: Focus Studio helps them prep space and get spec decisions
+right before a tenant is even in the picture.
 ${PROSPECTING_ANGLES}
 
 Structure: casual direct opener responding to what they wrote (or the
