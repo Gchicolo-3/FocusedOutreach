@@ -3,20 +3,12 @@
 import Link from 'next/link';
 import { C, F } from '@/lib/design';
 
-// Do This Now / Drafts are the daily workflow queues; every other tab is a
-// filtered view of the same records dataset (see RecordsView) — filters, not
-// separate pages.
+// Do This Now / Drafts are the daily workflow queues. Contacts holds every
+// record view as an in-page filter (see RecordsView) — not separate tabs.
 const tabs = [
   { id: 'do-this-now', label: 'Do This Now' },
   { id: 'drafts', label: 'Drafts' },
-  { id: 'brokers', label: 'Brokers' },
-  { id: 'cold-brokers', label: 'Cold Brokers' },
-  { id: 'projects', label: 'Potential Projects' },
-  { id: 'partners', label: 'Referral Partners' },
-  { id: 'not-worth-pursuing', label: 'Not Worth Pursuing' },
-  { id: 'blast-only', label: 'Blast Only' },
-  { id: 'monthly-outreach', label: 'Monthly Outreach' },
-  { id: 'import-review', label: 'Import Review' },
+  { id: 'contacts', label: 'Contacts' },
 ] as const;
 
 export type TabId = (typeof tabs)[number]['id'];
@@ -67,7 +59,6 @@ export default function TabNav({
             </button>
           );
         })}
-        {/* Separate page, not a tab — same styling so it reads as part of the nav. */}
         <Link
           href="/reply"
           style={{
