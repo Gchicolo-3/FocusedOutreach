@@ -402,12 +402,20 @@ export async function getVoiceSamples(limit = 8): Promise<VoiceSample[]> {
   return data || [];
 }
 
-export async function saveVoiceSample(channel: string, text: string): Promise<void> {
+export async function saveVoiceSample(
+  channel: string,
+  text: string,
+  opts?: { mode?: string; source?: string; contactName?: string }
+): Promise<void> {
   const t = (text || '').trim();
   if (!t) return;
-  const { error } = await supabase
-    .from('voice_samples')
-    .insert({ channel: channel || null, text: t });
+  const { error } = await supabase.from('voice_samples').insert({
+    channel: channel || null,
+    text: t,
+    mode: opts?.mode || null,
+    source: opts?.source || null,
+    contact_name: opts?.contactName || null,
+  });
   if (error) console.error('saveVoiceSample:', error);
 }
 
