@@ -12,7 +12,7 @@ import {
   dismissContact,
   restoreContact,
 } from '@/lib/storage';
-import { startCall, openInMessages, composeInOutlook } from '@/lib/sendActions';
+import { startCall, openInMessages, openInOutlook } from '@/lib/sendActions';
 import { C, F, labelMono, btnPrimary, btnGhost, pillStyle } from '@/lib/design';
 
 type Source = 'broker' | 'partner' | 'prospect' | 'cold_broker';
@@ -341,7 +341,7 @@ export default function Contacts({ onGoToToday }: { onGoToToday?: () => void }) 
                   ) : (
                     <>
                       {iconBtn(
-                        () => r.email && composeInOutlook(r.email, '', ''),
+                        () => r.email && openInOutlook(r.email, '', ''),
                         '✉️',
                         'Email in Outlook',
                         !r.email

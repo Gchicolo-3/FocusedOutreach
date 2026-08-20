@@ -1,3 +1,11 @@
+// ============================================================================
+// STATUS (verified 2026-08-20): Microsoft Graph was NEVER authenticated.
+// ms_oauth_tokens has zero rows, email_replies has zero rows, and no reply
+// has ever been ingested. Nothing downstream of this route has ever run
+// against real data. DORMANT: kept in place per Amendment 1 to the Aug 2026
+// brief — do not delete, do not build on it. The email send path is the
+// mailto: helper in lib/sendActions.ts.
+// ============================================================================
 // app/api/outlook/callback/route.ts
 // Microsoft redirects here with ?code&state after George grants access.
 // Verify state, exchange the code for tokens, persist, and bounce back to the

@@ -30,6 +30,49 @@ const supabase = new Proxy({} as SupabaseClient, {
 });
 
 // ============================================================
+// OUTREACH CAPS - shared daily volume config (Amendment 1)
+// ============================================================
+
+import {
+  DEFAULT_CAPS,
+  OUTREACH_CAPS_KEY,
+  normalizeCaps,
+  type OutreachCaps,
+} from '../outreachCaps';
+
+// Runtime caps from app_settings; falls back to defaults so a missing row or
+// a read failure can never turn the cap back into an unbounded queue.
+export async function getOutreachCaps(): Promise<OutreachCaps> {
+  const { data, error } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', OUTREACH_CAPS_KEY)
+    .maybeSingle();
+  if (error) {
+    console.error('getOutreachCaps:', error.message);
+    return DEFAULT_CAPS;
+  }
+  return normalizeCaps(data?.value);
+}
+
+// How much of today's total the cold pipeline has already claimed: cold
+// broker drafts created today. (The cold pipeline itself is Item 4; until it
+// writes drafts this is 0 and warm gets its full cap.)
+export async function getColdDraftCountToday(): Promise<number> {
+  const todayStart = `${new Date().toISOString().split('T')[0]}T00:00:00Z`;
+  const { count, error } = await supabase
+    .from('drafts')
+    .select('id', { count: 'exact', head: true })
+    .eq('contact_table', 'cold_brokers')
+    .gte('created_at', todayStart);
+  if (error) {
+    console.error('getColdDraftCountToday:', error.message);
+    return 0;
+  }
+  return count || 0;
+}
+
+// ============================================================
 // CONTACTS - reads from existing tables
 // ============================================================
 
@@ -379,10 +422,20 @@ export function normalizeContactName(name?: string | null): string {
 // have a pending (unreviewed) draft. Name keys catch the same person existing
 // under different ids (e.g. a row in both brokers and partners), which
 // id-only dedup missed.
+// Dedupe key for a signal draft with no contact attached. Every news signal
+// has a null contact_id, so keying on contact alone let the same story draft
+// repeatedly (CoreWeave reached 13 pending copies). Company + signal type is
+// the identity of a contact-less signal draft.
+export function companySignalKey(companyName?: string | null, signalType?: string | null): string {
+  const company = normalizeContactName(companyName || '');
+  if (!company) return '';
+  return `company:${company}|${signalType || ''}`;
+}
+
 export async function getPendingDraftKeys(): Promise<Set<string>> {
   const { data, error } = await supabase
     .from('drafts')
-    .select('contact_id, contact_name')
+    .select('contact_id, contact_name, contact_company, signal_id')
     .eq('status', 'pending');
 
   if (error) {
@@ -390,11 +443,30 @@ export async function getPendingDraftKeys(): Promise<Set<string>> {
     return new Set();
   }
 
+  const rows = data || [];
+
+  // Contact-less signal drafts need the signal's type for their key; fetch
+  // the types for this batch's signal ids in one query. No FK join assumed.
+  const signalIds = [...new Set(rows.filter((r) => !r.contact_id && r.signal_id).map((r) => r.signal_id))];
+  const signalTypeById = new Map<string, string>();
+  if (signalIds.length) {
+    const { data: sigs, error: sigErr } = await supabase
+      .from('signals')
+      .select('id, signal_type')
+      .in('id', signalIds);
+    if (sigErr) console.error('getPendingDraftKeys signals:', sigErr.message);
+    for (const s of sigs || []) signalTypeById.set(s.id, s.signal_type);
+  }
+
   const keys = new Set<string>();
-  for (const r of data || []) {
+  for (const r of rows) {
     if (r.contact_id) keys.add(String(r.contact_id));
     const nameKey = normalizeContactName(r.contact_name);
     if (nameKey) keys.add(`name:${nameKey}`);
+    if (!r.contact_id) {
+      const key = companySignalKey(r.contact_company, r.signal_id ? signalTypeById.get(r.signal_id) : '');
+      if (key) keys.add(key);
+    }
   }
   return keys;
 }

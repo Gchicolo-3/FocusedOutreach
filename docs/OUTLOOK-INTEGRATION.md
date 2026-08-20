@@ -1,5 +1,16 @@
 # Outlook / Microsoft Graph Integration
 
+> **STATUS (verified against the live database 2026-08-20): NEVER AUTHENTICATED.**
+> Microsoft Graph has never been connected. `ms_oauth_tokens` has zero rows,
+> `email_replies` has zero rows, and no reply has ever been ingested. Everything
+> below describes code that exists but has never run against real data — multiple
+> prior sessions have wrongly assumed reply tracking works. The
+> `/api/outlook/poll-replies` cron was removed from `vercel.json` on 2026-08-20
+> after firing 12x/day against the missing connection. Per Amendment 1 to the
+> August 2026 brief the routes and `ms_oauth_tokens` stay in place, dormant: do
+> not delete them and do not build on them. Email is sent manually via the
+> `mailto:` helper in `lib/sendActions.ts`.
+
 Replaces the old `mailto:` "Open in Email" flow with real Outlook drafts, and
 adds automatic capture of inbound replies into the `activities` table. Both
 run on George's own Focus Studio mailbox via the Microsoft Graph API.

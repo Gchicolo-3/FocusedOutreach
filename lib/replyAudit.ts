@@ -47,9 +47,12 @@ export const BANNED_PHRASES = [
   'babysitting the process',
   'not looking to pitch',
   'worth 5 minutes',
-  "it's been a while",
   'seamless',
 ];
+// "it's been a while" was removed from the mechanical list in the August 2026
+// voice.md revision: generic time references are a principle (editor checklist
+// item 2 catches them as non-triggers), not an exact-match ban. George's real
+// openers reference shared time specifically and must not be stripped.
 
 // voice.md bans this one only "when already sending a connection request".
 const CONNECT_ONLY_BANNED = ['would love to connect'];
@@ -96,7 +99,7 @@ function channelFormatRules(channel: ReplyChannel, mode: ReplyMode): string {
   const signoff = mode === 'internal' ? '"Thanks," then "George"' : '"Best," then "George"';
   switch (channel) {
     case 'email':
-      return `EMAIL: first line "Subject: ..." then a blank line, body opens "Hey [first name],", closes with ${signoff} on two separate lines.`;
+      return `EMAIL: first line "Subject: ..." then a blank line, body opens "Hey [first name]," or "Hi [first name]," (George uses both; Hey skews casual, Hi slightly warmer or more polite), closes with ${signoff} on two separate lines. Exception: on a short reply inside an existing thread with someone George knows, no signature at all is correct — do not force one onto a two line reply.`;
     case 'text':
       return 'TEXT MESSAGE: 2 to 3 short lines max. No subject line and NO sign-off — no "Best, George", no "Thanks, George", nothing after the message itself. Cold texts never include links.';
     case 'linkedin_connect':
@@ -112,19 +115,19 @@ function editorSystemPrompt(mode: ReplyMode, channel: ReplyChannel): string {
       ? `1. CLOSING: internal messages must end with a concrete next deliverable
    ("I'll have the layout over by Thursday"), not a vague "let me know" or an
    open-ended sign-off.`
-      : `1. DIRECT CLOSING ASK: the message must end on something the recipient
-   has to actually respond to — a direct question ("Coffee at Bellworks?",
-   "Free for a call this week?") or a direct, unhedged statement that still
-   functions as a clear next step. A statement of the sender's own
-   willingness or availability FAILS this check even when it mentions the
-   same activity a real ask would: "happy to grab coffee", "would love to
-   chat", "let me know if you'd be open to...", "open to a coffee or lunch",
-   "coffee sometime would be worth it" all fail. Trailing off with no close
-   at all also fails. The test is NOT whether coffee or a call is mentioned —
-   it's whether the recipient has something concrete to say yes or no to.
-   When you fix this, rewrite the close into a direct question ("Coffee at
-   Bellworks?", "Coffee or lunch next week?"), never into a shortened
-   version of the same passive structure.`;
+      : `1. CLOSING, SCOPED BY TEMPERATURE (per voice.md August 2026): first
+   judge the relationship temperature from the pasted content, CRM context,
+   and thread context. COLD (never met, true first contact): the message
+   must end on a direct question the recipient can answer yes or no —
+   "Coffee at Bellworks?", "Free for a call this week?" — a statement of
+   the sender's own willingness ("happy to grab coffee", "open to a coffee
+   or lunch") FAILS on cold, and the fix is a direct question, never a
+   shortened version of the same passive structure. WARM or HOT (they know
+   George, prior thread, mutual history evident): soft closes are correct
+   and are how George actually writes — "would love to grab coffee whenever
+   you have time" PASSES on warm and hot; do not rewrite it into a direct
+   question. Either temperature, a message that trails off after describing
+   value with no forward motion at all still fails.`;
 
   const jargonCheck =
     mode === 'client_prospecting'
@@ -165,11 +168,12 @@ ${closingCheck}
    ask, not a fabricated detail.
 3. GENERIC AI PHRASING: stock transitions, unearned enthusiasm, restating the
    obvious, anything that reads like AI output instead of something a real
-   person would type. Also flag a dropped subject pronoun ("Saw the news
-   about...", "Spend a lot of time with...") used on more than one sentence
-   per message — once is George's real texture, stacked across consecutive
-   sentences it reads as a checklist; restore the pronoun after the first
-   use.
+   person would type. Neutral business punctuation is also a flag: George
+   uses exclamation points liberally (roughly one per short message, more
+   when genuinely enthusiastic) and a draft with none can read flat. Dropped
+   subject pronouns ("Saw the news about...", "Went ahead and attached...")
+   are George's natural rhythm with NO cap — a real four sentence sample
+   contains three — so never flag or "fix" them for frequency.
 4. BANNED PHRASE NEAR MISSES: phrasing that means the same thing as a banned
    phrase without matching it exactly (e.g. "just wanted to see how things
    are" is "touching base" in disguise). The exact-match scan already ran;

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { generateMessage } from '@/lib/toneProfile';
-import { composeInOutlook } from '@/lib/sendActions';
+import { openInOutlook } from '@/lib/sendActions';
 import { logActivity, saveVoiceSample } from '@/lib/storage';
 import { C, F, labelMono, btnPrimary, btnSecondary, inputBase } from '@/lib/design';
 
@@ -98,7 +98,7 @@ export default function InlineCompose({
       setError('No email on file for this contact');
       return;
     }
-    void composeInOutlook(email, subject || `Quick note, ${contactName.split(' ')[0]}`, body);
+    openInOutlook(email, subject || `Quick note, ${contactName.split(' ')[0]}`, body);
   }
 
   async function handleLogActivity() {

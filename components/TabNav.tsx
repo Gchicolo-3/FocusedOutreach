@@ -59,6 +59,23 @@ export default function TabNav({
             </button>
           );
         })}
+        {/* Separate pages, not tabs — same styling so they read as part of the nav. */}
+        <Link
+          href="/review"
+          style={{
+            padding: '14px 16px',
+            fontSize: 13,
+            fontFamily: F.body,
+            fontWeight: 400,
+            color: C.muted,
+            borderBottom: '2px solid transparent',
+            whiteSpace: 'nowrap',
+            textDecoration: 'none',
+            marginBottom: -1,
+          }}
+        >
+          Draft Review ↗
+        </Link>
         <Link
           href="/reply"
           style={{
@@ -74,6 +91,22 @@ export default function TabNav({
           }}
         >
           Reply Generator ↗
+        </Link>
+        <Link
+          href="/triage"
+          style={{
+            padding: '14px 16px',
+            fontSize: 13,
+            fontFamily: F.body,
+            fontWeight: 400,
+            color: C.muted,
+            borderBottom: '2px solid transparent',
+            whiteSpace: 'nowrap',
+            textDecoration: 'none',
+            marginBottom: -1,
+          }}
+        >
+          Tier Triage ↗
         </Link>
       </div>
     </nav>

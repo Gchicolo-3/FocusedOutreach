@@ -11,11 +11,12 @@ import {
   getProspects,
   getColdBrokers,
   getSignalSources,
-  logTouch,
+  recordOutreachTouch,
   type EngineDraft,
   type SignalSource,
 } from '@/lib/storage';
 import MessageCard from '@/components/MessageCard';
+import CapsSettings from '@/components/CapsSettings';
 import { C, F, labelMono, btnGhost, pillStyle } from '@/lib/design';
 
 type ContactInfo = { email?: string; phone?: string };
@@ -112,12 +113,11 @@ export default function Drafts() {
   async function resolve(d: EngineDraft, status: 'sent' | 'killed') {
     setBusy(d.id);
     await setEngineDraftStatus(d.id, status);
-    // "Mark done" (sent) is a completed outreach action, so record a touch to
-    // reset the contact's cadence and keep the engine from re-drafting them.
-    // "Dismiss" (killed) is a rejection, not outreach, so it logs nothing.
+    // "Sent" is a completed outreach action: write the touch AND advance the
+    // contact's cadence (last_touch + next_due) in one call, so the queue
+    // actually drains. "Dismiss" (killed) is a rejection, logs nothing.
     if (status === 'sent' && d.contactId) {
-      const today = new Date().toISOString().split('T')[0];
-      await logTouch(d.contactId, today, toTouchChannel(d.channel));
+      await recordOutreachTouch(d.contactTable, d.contactId, toTouchChannel(d.channel));
     }
     setDrafts((prev) => prev.filter((x) => x.id !== d.id));
     setBusy(null);
@@ -134,6 +134,7 @@ export default function Drafts() {
           Drafts
         </h2>
         <div className="flex items-center gap-3 flex-wrap">
+          <CapsSettings />
           {auditStatus && <span style={labelMono}>{auditStatus}</span>}
           {drafts.some((d) => d.auditPassed === null) && (
             <button
@@ -247,6 +248,12 @@ export default function Drafts() {
                 channel={toGenerateChannel(d.channel)}
                 initialMessage={d.body}
                 subject={d.subject || undefined}
+                // Manual send means the loop only closes if the click is
+                // recorded — so opening Mail/Text/Call from a draft marks it
+                // sent and advances the cadence in the same gesture. Sending
+                // from a phone instead silently breaks the loop; this button
+                // is the one that counts.
+                onOpened={() => resolve(d, 'sent')}
               />
 
               <div className="flex gap-2 flex-wrap" style={{ marginTop: 12 }}>

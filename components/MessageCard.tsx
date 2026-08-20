@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { generateMessage, GenerateChannel } from '@/lib/toneProfile';
-import { openInMessages, composeInOutlook, startCall } from '@/lib/sendActions';
+import { openInMessages, openInOutlook, startCall } from '@/lib/sendActions';
 import { saveVoiceSample, setFollowUp, type ContactSource } from '@/lib/storage';
 import { C, F, labelMono, inputBase } from '@/lib/design';
 
@@ -20,6 +20,11 @@ type MessageCardProps = {
   lastTouch?: string;
   contactId?: string;
   contactSource?: ContactSource;
+  // Fired after an Open in Mail / Text / Call action hands off to the OS.
+  // The manual send path only closes the cadence loop if the click is
+  // recorded — callers (e.g. Drafts) use this to mark the draft sent and
+  // write the touch in the same gesture, so the loop is hard to skip.
+  onOpened?: (channel: 'email' | 'text' | 'call') => void;
 };
 
 export default function MessageCard({
@@ -36,6 +41,7 @@ export default function MessageCard({
   lastTouch,
   contactId,
   contactSource,
+  onOpened,
 }: MessageCardProps) {
   const [activeChannel, setActiveChannel] = useState<GenerateChannel>(initialChannel);
   const [purpose, setPurpose] = useState('');
@@ -110,14 +116,18 @@ export default function MessageCard({
       return;
     }
     openInMessages(p, message);
+    onOpened?.('text');
   }
 
+  // Manual send path (Amendment 1): mailto only, never a Graph draft. Opens
+  // the default mail client prefilled with recipient, subject, and body.
   function handleSendEmail() {
     if (!email) {
       setError('No email on file');
       return;
     }
-    void composeInOutlook(email, msgSubject || `Focus Studio — ${firstName}`, message);
+    openInOutlook(email, msgSubject || `Focus Studio — ${firstName}`, message);
+    onOpened?.('email');
   }
 
   function handleCall() {
@@ -127,6 +137,7 @@ export default function MessageCard({
       return;
     }
     startCall(p);
+    onOpened?.('call');
   }
 
   // Saves the current (edited) message as a voice sample. Future generations
@@ -252,8 +263,13 @@ export default function MessageCard({
           {actionBtn({
             onClick: () => {
               setShowPhoneInput(false);
-              if (activeChannel === 'call') startCall(phoneInput);
-              else openInMessages(phoneInput, message);
+              if (activeChannel === 'call') {
+                startCall(phoneInput);
+                onOpened?.('call');
+              } else {
+                openInMessages(phoneInput, message);
+                onOpened?.('text');
+              }
             },
             label: activeChannel === 'call' ? 'Call' : 'Open Messages',
             bg: C.amberBg,
@@ -296,7 +312,7 @@ export default function MessageCard({
         {email &&
           actionBtn({
             onClick: handleSendEmail,
-            label: '✉️ Open in Outlook',
+            label: '✉️ Open in Mail',
             bg: 'rgba(74,176,255,0.08)',
             color: C.blue,
             border: 'rgba(74,176,255,0.2)',
