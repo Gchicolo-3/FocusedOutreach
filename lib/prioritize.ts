@@ -179,6 +179,13 @@ export function selectDaily5(
   doneIds: Set<string>,
   snoozedIds: Set<string>
 ): DailyTask[] {
+  // Only bucket='active' contacts get cadence touches. cold sits in the Cold
+  // Brokers tab, not_worth_pursuing is parked, and blast_only is mass-send
+  // only (Salesforce D tier) — none of them belong in the daily queue.
+  prospects = prospects.filter((p) => (p.bucket ?? 'active') === 'active');
+  brokers = brokers.filter((b) => (b.bucket ?? 'active') === 'active');
+  partners = partners.filter((p) => (p.bucket ?? 'active') === 'active');
+
   const tasks: DailyTask[] = [];
   const used = new Set<string>();
   const exclude = (id: string) => doneIds.has(id) || snoozedIds.has(id) || used.has(id);

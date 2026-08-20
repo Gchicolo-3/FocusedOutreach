@@ -35,6 +35,7 @@ export async function getProspects(): Promise<Lead[]> {
     tier: r.tier, broker: r.broker, channel: r.channel,
     lastTouch: r.last_touch, nextDue: r.next_due, email: r.email, phone: r.phone,
     dismissed: r.dismissed ?? false,
+    bucket: r.bucket ?? 'active', isEnterprise: r.is_enterprise ?? false,
   }));
 }
 
@@ -65,6 +66,7 @@ export async function getBrokers(): Promise<Broker[]> {
     dealCount: r.deal_count, dealNames: r.deal_names || [],
     lastTouch: r.last_touch, nextDue: r.next_due, notes: r.notes,
     status: r.status, dismissed: r.dismissed ?? false,
+    bucket: r.bucket ?? 'active', persona: r.persona ?? null,
   }));
 }
 
@@ -119,6 +121,7 @@ export async function getPartners(): Promise<Partner[]> {
     tier: r.tier, referralCount: r.referral_count,
     lastTouch: r.last_touch, nextDue: r.next_due, notes: r.notes,
     email: r.email, phone: r.phone, dismissed: r.dismissed ?? false,
+    bucket: r.bucket ?? 'active', persona: r.persona ?? null,
   }));
 }
 
@@ -308,6 +311,7 @@ export type EngineDraft = {
   subject: string | null;
   body: string;
   draftType: string | null;
+  signalId: string | null;
   signalSummary: string | null;
 };
 
@@ -331,8 +335,30 @@ export async function getPendingEngineDrafts(limit = 60): Promise<EngineDraft[]>
     subject: r.subject,
     body: r.edited_body || r.body,
     draftType: r.draft_type,
+    signalId: r.signal_id,
     signalSummary: r.signal_summary,
   }));
+}
+
+// Source attribution for signals (the article the signal came from), keyed by
+// signal id. The columns have existed since the prospectors started writing
+// them; this just surfaces them in the UI.
+export type SignalSource = { url: string; name: string };
+
+export async function getSignalSources(signalIds: string[]): Promise<Map<string, SignalSource>> {
+  const ids = signalIds.filter(Boolean);
+  const out = new Map<string, SignalSource>();
+  if (!ids.length) return out;
+  const { data, error } = await supabase
+    .from('signals')
+    .select('id, source_url, source_name')
+    .in('id', ids);
+  if (error) { console.error('getSignalSources:', error); return out; }
+  for (const r of data || []) {
+    if (!r.source_url) continue;
+    out.set(r.id, { url: r.source_url, name: r.source_name || 'Source' });
+  }
+  return out;
 }
 
 export async function setEngineDraftStatus(
@@ -561,8 +587,12 @@ export async function exportAllToCSV(): Promise<void> {
 
 // ============ INIT DEFAULTS ============
 export async function initDefaultBrokers(): Promise<void> {
+  clearLoadError();
   const existing = await getBrokers();
-  if (existing.length > 0) return;
+  // Bail on a failed read too — an empty result from a network/API error must
+  // not be mistaken for an empty table, or the starter seed upserts over live
+  // rows (broker-1..8 share ids with the seed data).
+  if (existing.length > 0 || getLastLoadError()) return;
 
   const starters = [
     { firstName: 'Peter', lastName: 'Shikar', firm: 'CBRE', tier: 'A' as RelationshipTier, dealCount: 7, lastTouch: '2026-03-10' },
@@ -589,8 +619,11 @@ export async function initDefaultBrokers(): Promise<void> {
 }
 
 export async function initDefaultColdBrokers(): Promise<void> {
+  clearLoadError();
   const existing = await getColdBrokers();
-  if (existing.length > 0) return;
+  // Same guard as initDefaultBrokers: a failed read is not an empty table.
+  // Seeding on error would reset the status of every zi-* row to 'new'.
+  if (existing.length > 0 || getLastLoadError()) return;
 
   const defaults: ColdBroker[] = [
     { id: 'zi-1', name: 'Jon Sarkisian', title: 'EVP', firm: 'CBRE', email: 'jon.sarkisian@cbre.com', phone: '(609) 257-8100', mobile: '(609) 257-8100', status: 'new' },
