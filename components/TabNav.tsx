@@ -25,16 +25,18 @@ export default function TabNav({
       style={{
         background: C.bg,
         borderBottom: `1px solid ${C.border}`,
-        overflowX: 'auto',
-        whiteSpace: 'nowrap',
       }}
     >
+      {/* Wrap to a second row on narrow screens. The old overflowX: auto strip
+          silently pushed the page links (Reply Generator, etc.) past the right
+          edge on phones with no scroll affordance — they looked deleted. */}
       <div
         style={{
           maxWidth: 900,
           margin: '0 auto',
           padding: '0 20px',
           display: 'flex',
+          flexWrap: 'wrap',
         }}
       >
         {tabs.map((tab) => {
