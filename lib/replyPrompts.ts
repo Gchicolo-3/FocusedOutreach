@@ -182,14 +182,20 @@ OUTPUT CHANNEL: EMAIL.
   that clearly has a subject, use "Subject: Re: [their subject]". Never a
   corporate subject like "Reaching out from Focus Studio".
 - Then a blank line, then the body.
-- Open the body "Hey [first name]," and close:
-${signOff(mode)}`;
+- Open the body "Hey [first name]," or "Hi [first name],". George uses both;
+  Hey skews casual, Hi slightly warmer or more polite. Pick by relationship.
+- Close:
+${signOff(mode)}
+  Exception: on a short reply inside an existing thread with someone George
+  knows, no signature at all is correct. Do not force one onto a two line
+  reply.`;
     case 'text':
       return `
 OUTPUT CHANNEL: TEXT MESSAGE.
 - 2 to 3 short lines max. Casual, warm, punchy.
 - No subject line, no sign off, no "Best, George".
-- Open with "Hey [first name]," or jump straight in if replying mid-thread.`;
+- Open with "Hey [first name]," or "Hi [first name]," or jump straight in if
+  replying mid-thread.`;
     case 'linkedin_connect':
       return `
 OUTPUT CHANNEL: LINKEDIN CONNECTION REQUEST NOTE.
@@ -221,8 +227,9 @@ it.
 
 - Keep his wording, structure, and intent. His edits are deliberate.
 - Fix only: typos, grammar slips, banned phrases, em dashes, markdown
-  formatting, a stacked second ask, or anything that clearly violates the
-  rules above (including the channel format rules).
+  formatting, a second UNRELATED ask (a second easy-out door on the same ask
+  is George's style and stays), or anything that clearly violates the rules
+  above (including the channel format rules).
 - If a line reads fine, leave it exactly as he wrote it, even if you would
   have phrased it differently.
 - If nothing needs fixing, return his text unchanged.
