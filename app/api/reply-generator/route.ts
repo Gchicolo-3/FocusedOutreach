@@ -15,6 +15,7 @@ import {
   auditCheckedSummary,
   type AuditOutcome,
 } from '@/lib/replyAudit';
+import { sanitizeReply, hasNamePlaceholder, fillNamePlaceholders } from '@/lib/replyText';
 
 export const dynamic = 'force-dynamic';
 // Generation + up to two banned-phrase rewrites + the editor pass is up to
@@ -128,18 +129,6 @@ async function fetchContactContext(
   return { text: lines.join('\n'), firstName: contactFirstName };
 }
 
-// [name] / [First Name] style placeholders that templates and prompt examples
-// use for an unknown recipient. Shipping one in a real draft is a bug: fill it
-// from the connected contact when possible, otherwise fail loudly via the
-// audit warning so it can't be copied unnoticed.
-function hasNamePlaceholder(text: string): boolean {
-  return /\[\s*(?:first\s*name|name)\s*\]/i.test(text);
-}
-
-function fillNamePlaceholders(text: string, firstName: string): string {
-  return text.replace(/\[\s*(?:first\s*name|name)\s*\]/gi, firstName);
-}
-
 // Real messages George has written, same anchor the compose route uses.
 // Prefer samples from the matching voice_samples channel (email/text/linkedin),
 // then fall back to any channel.
@@ -168,24 +157,6 @@ async function fetchVoiceSamples(channel: ReplyChannel, limit = 6): Promise<stri
   } catch {
     return [];
   }
-}
-
-// The output must be paste-ready plain text. The prompt forbids markdown and
-// em dashes but models still slip, so enforce deterministically.
-function sanitizeReply(text: string): string {
-  let out = text.trim();
-  // Markdown bold/italic wrappers, keep the inner text.
-  out = out.replace(/\*\*([^*]+)\*\*/g, '$1');
-  out = out.replace(/__([^_]+)__/g, '$1');
-  out = out.replace(/(^|\s)\*([^*\n]+)\*(?=\s|[.,!?;:]|$)/g, '$1$2');
-  // Markdown headers at line start.
-  out = out.replace(/^#{1,6}\s+/gm, '');
-  // Em/en dashes: spaced ones become a comma pause, bare ones too.
-  out = out.replace(/\s+[—–]\s+/g, ', ');
-  out = out.replace(/[—–]/g, ', ');
-  // Model preambles like "Here's a draft:" on the first line.
-  out = out.replace(/^(here('|')s|here is)[^\n]*:\s*\n+/i, '');
-  return out.trim();
 }
 
 export async function POST(req: NextRequest) {

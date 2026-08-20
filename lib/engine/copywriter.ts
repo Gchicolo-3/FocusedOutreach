@@ -149,23 +149,42 @@ Channel: ${channel}`;
     };
   }
 
-  // Cadence touch
+  // Cadence touch. The recency guard (lib/engine/recencyGuard.ts) already
+  // decided which template applies — the copywriter's job is only to write it.
   const contact = data;
   const isBroker = contact.source_table === 'brokers';
   const channel = contact.tier === 'A' ? 'text' : 'email';
-  const draftType = contact.last_touch ? 'check_in' : 'cold_intro';
+  const draftType: string =
+    contact.draft_template || (contact.last_touch ? 'check_in' : 'cold_intro');
   const daysOverdue = contact.days_overdue || 0;
+
+  // Template-specific framing so a recent touch is acknowledged, a true lapse
+  // reads normally, and a never-connected contact gets an intro — never a
+  // "checking in" to someone who has no idea who George is.
+  let templateNote: string;
+  if (draftType === 'follow_up') {
+    const kind = contact.guard_last_touch_kind || 'touch';
+    const days = contact.guard_days_since_touch;
+    templateNote = `You were last in touch ${days != null ? `${days} days ago` : 'recently'} (${kind}${contact.guard_last_touch ? `, ${contact.guard_last_touch}` : ''}).
+This is a CONTINUATION of an active conversation, not a re-connection. Reference the recent interaction naturally and move it forward (next step, useful follow-through, something promised). Absolutely no "been a while" / "reconnecting" / "checking in" framing.`;
+  } else if (draftType === 'cold_intro') {
+    const attempt = contact.cold_attempt_number;
+    templateNote = `You have NEVER actually connected with this person — no meeting, no conversation on record.${attempt ? ` This is outreach attempt #${attempt}.` : ''}
+Write a first-touch intro: who George helps and the one concrete thing Focus Studio can do for their deals. Do not imply any prior relationship, do not "check in", do not reference past conversations.`;
+  } else {
+    templateNote = `This is a scheduled cadence touch after a real gap. No specific signal. Keep it natural and brief.`;
+  }
 
   const prompt = `Draft a ${channel} ${draftType} message.
 
 Recipient: ${contact.first_name} ${contact.last_name} at ${contact.company}
 Contact type: ${isBroker ? 'Commercial real estate broker' : 'Business partner/referral source'}
 Relationship tier: ${contact.tier}
-Last touch: ${contact.last_touch || 'Never'}
+Last touch: ${contact.guard_last_touch || contact.last_touch || 'Never'}
 Days since due: ${daysOverdue}
 ${contact.notes ? `Notes on this person: ${contact.notes}` : ''}
 
-This is a scheduled cadence touch. No specific signal. Keep it natural and brief.
+${templateNote}
 Opener direction: ${openerAngleFor(contact.id)} Do not comment on how long it has been since you last spoke.
 ${contact.tier === 'A' ? 'This is an A-tier relationship. Tone should feel like a text from someone they know.' : ''}
 ${buildAvoidOpenersBlock(avoidOpeners)}

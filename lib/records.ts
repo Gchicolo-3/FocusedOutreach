@@ -8,6 +8,7 @@
 import { supabase } from './supabase';
 import { Bucket, RelationshipTier } from '@/types';
 import { computeNextDue, computeStatus } from './cadence';
+import { canonicalKey } from './identity';
 
 export type RecordSource = 'broker' | 'partner' | 'prospect' | 'cold_broker';
 
@@ -23,6 +24,7 @@ export const BUCKET_OPTIONS: Array<{ value: Bucket; label: string }> = [
   { value: 'cold', label: 'Cold' },
   { value: 'not_worth_pursuing', label: 'Not Worth Pursuing' },
   { value: 'blast_only', label: 'Blast Only' },
+  { value: 'monthly_outreach', label: 'Monthly Outreach' },
 ];
 
 // ============ PARTIAL UPDATES ============
@@ -145,6 +147,8 @@ function normalize(row: RawRow, source: RecordSource): NormalizedRecord {
 }
 
 function toTargetRow(n: NormalizedRecord, id: string, target: RecordSource): RawRow {
+  const canonical_key =
+    canonicalKey(`${n.firstName} ${n.lastName}`, n.company) || null;
   if (target === 'broker') {
     return {
       id, first_name: n.firstName, last_name: n.lastName,
@@ -153,7 +157,7 @@ function toTargetRow(n: NormalizedRecord, id: string, target: RecordSource): Raw
       tier: n.tier, deal_count: 0, deal_names: [],
       last_touch: n.lastTouch, next_due: computeNextDue(n.lastTouch, n.tier),
       notes: n.notes, status: computeStatus(n.lastTouch, n.tier),
-      bucket: n.bucket, persona: n.persona,
+      bucket: n.bucket, persona: n.persona, canonical_key,
     };
   }
   if (target === 'partner') {
@@ -163,7 +167,7 @@ function toTargetRow(n: NormalizedRecord, id: string, target: RecordSource): Raw
       tier: n.tier, referral_count: 0,
       last_touch: n.lastTouch, next_due: computeNextDue(n.lastTouch, n.tier),
       notes: n.notes, email: n.email, phone: n.phone,
-      bucket: n.bucket, persona: n.persona,
+      bucket: n.bucket, persona: n.persona, canonical_key,
     };
   }
   // prospect
@@ -174,7 +178,7 @@ function toTargetRow(n: NormalizedRecord, id: string, target: RecordSource): Raw
     priority: '', comments: n.notes, tier: prospectTier(n.tier),
     channel: 'email', last_touch: n.lastTouch,
     email: n.email, phone: n.phone,
-    bucket: n.bucket, is_enterprise: false,
+    bucket: n.bucket, is_enterprise: false, canonical_key,
   };
 }
 

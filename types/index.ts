@@ -2,7 +2,10 @@ export type ContactType = 'prospect' | 'broker' | 'referral_partner' | 'uncatego
 export type RelationshipTier = 'A' | 'B' | 'C';
 // Single field that drives every tab: moving a record between buckets is one
 // update. 'blast_only' mirrors the Salesforce D-tier logic (no cadence).
-export type Bucket = 'active' | 'cold' | 'not_worth_pursuing' | 'blast_only';
+// 'monthly_outreach' holds never-connected contacts after 3 unanswered
+// touchpoints: one cold touch per 30 days until they respond or a meeting
+// happens (the recency guard parks/restores them automatically).
+export type Bucket = 'active' | 'cold' | 'not_worth_pursuing' | 'blast_only' | 'monthly_outreach';
 export type Channel = 'call' | 'text' | 'email' | 'linkedin';
 export type PartnerType =
   | 'attorney'

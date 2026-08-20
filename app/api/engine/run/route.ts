@@ -13,6 +13,7 @@ import { isEngineRequestAuthorized } from '@/lib/engine/auth';
 import { runProspector } from '@/lib/engine/prospector';
 import { runNewsProspector } from '@/lib/engine/newsProspector';
 import { runQualifier } from '@/lib/engine/qualifier';
+import { auditPendingDrafts } from '@/lib/engine/draftAudit';
 
 export const maxDuration = 300; // 5 min max for Vercel Pro, 60s for hobby
 export const dynamic = 'force-dynamic'; // request-time only; never prerender
@@ -102,6 +103,25 @@ export async function GET(request: Request) {
     console.log(`[Engine] Drafting ${allItems.length} of ${candidates.length} candidates (capped at ${MAX_DRAFTS_PER_RUN})`);
     const drafts = await runCopywriter(allItems);
     summary.draftsCreated = drafts.length;
+
+    // Step 4b: Audit the fresh batch (banned phrases + editor checklist) so
+    // no draft reaches the review queue unaudited. Bounded to this run's
+    // drafts; the backlog drains separately via /api/engine/audit.
+    if (drafts.length > 0) {
+      try {
+        console.log('[Engine] Auditing fresh drafts...');
+        const audit = await auditPendingDrafts(drafts.length);
+        console.log(
+          `[Engine] Audit: ${audit.passed} clean, ${audit.fixed} auto-corrected, ${audit.failed} flagged, ${audit.errors} errors`
+        );
+        if (audit.failed > 0) {
+          summary.errors.push(`${audit.failed} draft(s) flagged by audit — see the Drafts tab`);
+        }
+      } catch (err: any) {
+        console.error('[Engine] Audit step failed:', err);
+        summary.errors.push(`audit: ${err.message}`);
+      }
+    }
 
     // Step 5: Morning digest - email + dashboard update
     console.log('[Engine] Sending morning digest...');

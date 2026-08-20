@@ -47,6 +47,8 @@ export default function Drafts() {
   const [sources, setSources] = useState<Map<string, SignalSource>>(new Map());
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  const [auditing, setAuditing] = useState(false);
+  const [auditStatus, setAuditStatus] = useState<string | null>(null);
 
   async function load() {
     const [d, brokers, partners, prospects, cold] = await Promise.all([
@@ -70,6 +72,42 @@ export default function Drafts() {
   useEffect(() => {
     load();
   }, []);
+
+  // Works through the unaudited backlog batch by batch (the server audits 20
+  // per call) until nothing pending is left unaudited, then reloads so fresh
+  // audit pills and any auto-corrected bodies show up.
+  async function runAudit() {
+    setAuditing(true);
+    setAuditStatus('Auditing…');
+    let passed = 0;
+    let fixed = 0;
+    let failed = 0;
+    try {
+      // Hard iteration cap so a stuck server can't loop forever.
+      for (let i = 0; i < 50; i++) {
+        const res = await fetch('/api/engine/audit-trigger', { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setAuditStatus(data?.error || `Audit failed (HTTP ${res.status})`);
+          setAuditing(false);
+          return;
+        }
+        passed += data.passed || 0;
+        fixed += data.fixed || 0;
+        failed += data.failed || 0;
+        const remaining = data.remaining ?? 0;
+        setAuditStatus(`Audited ${passed + fixed + failed} · ${remaining} left…`);
+        if (remaining <= 0 || (data.audited || 0) === 0) break;
+      }
+      setAuditStatus(
+        `Audit done: ${passed} clean · ${fixed} auto-corrected · ${failed} flagged`
+      );
+      await load();
+    } catch (err) {
+      setAuditStatus(err instanceof Error ? err.message : 'Audit failed');
+    }
+    setAuditing(false);
+  }
 
   async function resolve(d: EngineDraft, status: 'sent' | 'killed') {
     setBusy(d.id);
@@ -95,9 +133,22 @@ export default function Drafts() {
         <h2 style={{ fontFamily: F.display, fontSize: 18, fontWeight: 700, color: C.text }}>
           Drafts
         </h2>
-        <span style={labelMono}>
-          {drafts.length} waiting{drafts.length >= 60 ? '+ (newest first)' : ''}
-        </span>
+        <div className="flex items-center gap-3 flex-wrap">
+          {auditStatus && <span style={labelMono}>{auditStatus}</span>}
+          {drafts.some((d) => d.auditPassed === null) && (
+            <button
+              onClick={runAudit}
+              disabled={auditing}
+              style={{ ...btnGhost, opacity: auditing ? 0.6 : 1 }}
+              title="Run the banned-phrase + editor audit over every pending draft that hasn't been audited yet."
+            >
+              {auditing ? 'Auditing…' : 'Audit unaudited drafts'}
+            </button>
+          )}
+          <span style={labelMono}>
+            {drafts.length} waiting{drafts.length >= 60 ? '+ (newest first)' : ''}
+          </span>
+        </div>
       </div>
 
       {drafts.length === 0 ? (
@@ -134,8 +185,29 @@ export default function Drafts() {
                 <div className="flex gap-1.5">
                   <span style={pillStyle(channelPill[d.channel] || 'muted')}>{d.channel}</span>
                   {d.draftType && <span style={pillStyle('muted')}>{d.draftType.replace(/_/g, ' ')}</span>}
+                  {d.auditPassed === true && <span style={pillStyle('teal')}>audited ✓</span>}
+                  {d.auditPassed === false && <span style={pillStyle('red')}>audit ⚠</span>}
+                  {d.auditPassed === null && <span style={pillStyle('muted')}>unaudited</span>}
                 </div>
               </div>
+
+              {d.auditFindings && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    background: d.auditPassed === false ? 'rgba(255,107,107,0.06)' : 'rgba(74,255,212,0.05)',
+                    borderLeft: `2px solid ${d.auditPassed === false ? C.red : C.teal}`,
+                    borderRadius: '0 8px 8px 0',
+                    padding: '8px 12px',
+                    fontSize: 12,
+                    color: d.auditPassed === false ? C.red : C.teal,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {d.auditPassed === false ? 'Audit flagged: ' : 'Audit corrected: '}
+                  {d.auditFindings}
+                </div>
+              )}
 
               {d.signalSummary && (
                 <div
