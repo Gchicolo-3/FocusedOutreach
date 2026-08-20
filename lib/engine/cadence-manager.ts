@@ -11,9 +11,12 @@ import {
   getPartnersDueForTouch,
   getMonthlyOutreachContacts,
   getTouchEvidence,
+  getOutreachCaps,
+  getColdDraftCountToday,
   updateContactBucket,
   toIsoDate,
 } from './db';
+import { warmAllowance } from '../outreachCaps';
 import { decideTouch, type DraftTemplate } from './recencyGuard';
 
 export type DueContact = {
@@ -131,6 +134,18 @@ export async function runCadenceManager(): Promise<DueContact[]> {
     return b.days_overdue - a.days_overdue;
   });
 
-  console.log(`[CadenceManager] ${results.length} contacts cleared for touch`);
-  return results;
+  // Item 3a (Amendment 1): return only what George can actually touch today,
+  // ranked — not the whole backlog. Warm's slice of the day shrinks by
+  // whatever the cold pipeline already claimed. Everything else waits;
+  // pending-draft dedupe in the run route rotates fresh contacts in on the
+  // next run.
+  const [caps, coldToday] = await Promise.all([getOutreachCaps(), getColdDraftCountToday()]);
+  const allowance = warmAllowance(caps, coldToday);
+  const capped = results.slice(0, allowance);
+
+  console.log(
+    `[CadenceManager] ${results.length} due; returning top ${capped.length} ` +
+      `(warm cap ${caps.warmDaily}, daily total ${caps.dailyTotal}, cold used today ${coldToday})`
+  );
+  return capped;
 }

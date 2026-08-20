@@ -16,6 +16,7 @@ import {
   type SignalSource,
 } from '@/lib/storage';
 import MessageCard from '@/components/MessageCard';
+import CapsSettings from '@/components/CapsSettings';
 import { C, F, labelMono, btnGhost, pillStyle } from '@/lib/design';
 
 type ContactInfo = { email?: string; phone?: string };
@@ -133,6 +134,7 @@ export default function Drafts() {
           Drafts
         </h2>
         <div className="flex items-center gap-3 flex-wrap">
+          <CapsSettings />
           {auditStatus && <span style={labelMono}>{auditStatus}</span>}
           {drafts.some((d) => d.auditPassed === null) && (
             <button

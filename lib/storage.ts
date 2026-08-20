@@ -5,6 +5,13 @@ import {
   UserTag, Channel, RelationshipTier, ContactType,
 } from '@/types';
 import { computeNextDue, computeStatus } from './cadence';
+import {
+  DEFAULT_CAPS,
+  OUTREACH_CAPS_KEY,
+  capsToJson,
+  normalizeCaps,
+  type OutreachCaps,
+} from './outreachCaps';
 export type { ActivityRecord } from './parseCSV';
 import type { ActivityRecord } from './parseCSV';
 import { normalizeContactKey } from './parseCSV';
@@ -724,6 +731,34 @@ export async function logActivity(params: {
   } else {
     await logPartnerTouch(params.contactId);
   }
+}
+
+// ============ OUTREACH CAPS (app_settings) ============
+// The daily volume knobs (Amendment 1): one shared config for warm + cold so
+// the two lanes can't combine past the daily total. Runtime-editable, no
+// deploy needed. Server-side consumers read via lib/engine/db.ts.
+export type { OutreachCaps } from './outreachCaps';
+
+export async function getOutreachCapsSetting(): Promise<OutreachCaps> {
+  const { data, error } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', OUTREACH_CAPS_KEY)
+    .maybeSingle();
+  if (error) {
+    console.error('getOutreachCapsSetting:', error);
+    return DEFAULT_CAPS;
+  }
+  return normalizeCaps(data?.value);
+}
+
+export async function saveOutreachCapsSetting(caps: OutreachCaps): Promise<void> {
+  const { error } = await supabase.from('app_settings').upsert({
+    key: OUTREACH_CAPS_KEY,
+    value: capsToJson(caps),
+    updated_at: new Date().toISOString(),
+  });
+  if (error) console.error('saveOutreachCapsSetting:', error);
 }
 
 // ============ TEXT SENT ============

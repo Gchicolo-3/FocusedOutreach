@@ -92,6 +92,22 @@ export default function TabNav({
         >
           Reply Generator ↗
         </Link>
+        <Link
+          href="/triage"
+          style={{
+            padding: '14px 16px',
+            fontSize: 13,
+            fontFamily: F.body,
+            fontWeight: 400,
+            color: C.muted,
+            borderBottom: '2px solid transparent',
+            whiteSpace: 'nowrap',
+            textDecoration: 'none',
+            marginBottom: -1,
+          }}
+        >
+          Tier Triage ↗
+        </Link>
       </div>
     </nav>
   );

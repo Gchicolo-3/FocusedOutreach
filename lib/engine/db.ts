@@ -30,6 +30,49 @@ const supabase = new Proxy({} as SupabaseClient, {
 });
 
 // ============================================================
+// OUTREACH CAPS - shared daily volume config (Amendment 1)
+// ============================================================
+
+import {
+  DEFAULT_CAPS,
+  OUTREACH_CAPS_KEY,
+  normalizeCaps,
+  type OutreachCaps,
+} from '../outreachCaps';
+
+// Runtime caps from app_settings; falls back to defaults so a missing row or
+// a read failure can never turn the cap back into an unbounded queue.
+export async function getOutreachCaps(): Promise<OutreachCaps> {
+  const { data, error } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', OUTREACH_CAPS_KEY)
+    .maybeSingle();
+  if (error) {
+    console.error('getOutreachCaps:', error.message);
+    return DEFAULT_CAPS;
+  }
+  return normalizeCaps(data?.value);
+}
+
+// How much of today's total the cold pipeline has already claimed: cold
+// broker drafts created today. (The cold pipeline itself is Item 4; until it
+// writes drafts this is 0 and warm gets its full cap.)
+export async function getColdDraftCountToday(): Promise<number> {
+  const todayStart = `${new Date().toISOString().split('T')[0]}T00:00:00Z`;
+  const { count, error } = await supabase
+    .from('drafts')
+    .select('id', { count: 'exact', head: true })
+    .eq('contact_table', 'cold_brokers')
+    .gte('created_at', todayStart);
+  if (error) {
+    console.error('getColdDraftCountToday:', error.message);
+    return 0;
+  }
+  return count || 0;
+}
+
+// ============================================================
 // CONTACTS - reads from existing tables
 // ============================================================
 
