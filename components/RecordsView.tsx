@@ -36,7 +36,8 @@ export type RecordTab =
   | 'projects'
   | 'partners'
   | 'not-worth-pursuing'
-  | 'blast-only';
+  | 'blast-only'
+  | 'monthly-outreach';
 
 type Row = {
   id: string;
@@ -112,6 +113,7 @@ const viewTitles: Record<RecordTab, string> = {
   partners: 'Referral Partners',
   'not-worth-pursuing': 'Not Worth Pursuing',
   'blast-only': 'Blast Only',
+  'monthly-outreach': 'Monthly Outreach',
 };
 
 const viewHints: Record<RecordTab, string> = {
@@ -121,6 +123,8 @@ const viewHints: Record<RecordTab, string> = {
   partners: 'Referral partner relationships.',
   'not-worth-pursuing': 'Parked across all tables. Set bucket back to Active to restore.',
   'blast-only': 'Mass-send only (Salesforce D tier) — no cadence, no daily queue.',
+  'monthly-outreach':
+    'Never-connected contacts after 3 unanswered touchpoints. One cold touch per 30 days; auto-restored to Active when they engage.',
 };
 
 const tierRank: Record<string, number> = { A: 0, B: 1, C: 2, '1': 0, '2': 1, '3': 2 };
@@ -397,6 +401,8 @@ export default function RecordsView({ view }: { view: RecordTab }) {
       if (enterpriseFilter === 'standard') out = out.filter((r) => !r.isEnterprise);
     } else if (view === 'partners') {
       out = out.filter((r) => r.source === 'partner' && r.bucket === 'active' && !r.dismissed);
+    } else if (view === 'monthly-outreach') {
+      out = out.filter((r) => r.bucket === 'monthly_outreach');
     } else if (view === 'not-worth-pursuing') {
       // bucket is canonical; legacy dismissed rows surface here too so nothing
       // is invisible.
@@ -414,7 +420,8 @@ export default function RecordsView({ view }: { view: RecordTab }) {
     return [...out].sort((a, b) => compareRows(a, b, sortKey));
   }, [rows, view, q, sortKey, personaFilter, enterpriseFilter, coldStatusFilter]);
 
-  const showSourcePill = view === 'cold-brokers' || view === 'not-worth-pursuing' || view === 'blast-only';
+  const showSourcePill =
+    view === 'cold-brokers' || view === 'not-worth-pursuing' || view === 'blast-only' || view === 'monthly-outreach';
 
   const personaChips = [
     { id: 'all', label: 'All' },

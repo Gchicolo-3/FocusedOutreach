@@ -1,99 +1,84 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+// Reply Generator as a conversation. George connects a contact (the system
+// loads everything it knows about them — no explaining who someone is),
+// describes the situation in his own words, and drafts come back inside the
+// chat. Reactions are just the next message; mode and channel are inferred
+// from what he says, never picked from a dropdown. Approved drafts feed the
+// voice bank with one click.
+
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { buildSmsLink, composeInOutlook } from '@/lib/sendActions';
-import type { ReplyChannel, ReplyMode } from '@/lib/replyPrompts';
-import { C, F, labelMono, card, btnPrimary, btnSecondary, btnGhost, inputBase, pillStyle } from '@/lib/design';
+import { saveVoiceSample } from '@/lib/storage';
+import { C, F, labelMono, card as cardStyle, pillStyle, btnPrimary, btnGhost, inputBase } from '@/lib/design';
 
-type Pill = 'teal' | 'accent' | 'purple' | 'amber' | 'blue' | 'muted';
+// ============ types ============
 
-const MODES: { id: ReplyMode; label: string; pill: Pill }[] = [
-  { id: 'cre_referral', label: 'CRE / Referral', pill: 'teal' },
-  { id: 'broker_prospecting', label: 'Broker Prospecting', pill: 'accent' },
-  { id: 'client_prospecting', label: 'Client Prospecting', pill: 'amber' },
-  { id: 'internal', label: 'Internal', pill: 'purple' },
-];
+type ContactTable = 'brokers' | 'partners' | 'prospects' | 'cold_brokers';
 
-const CHANNELS: { id: ReplyChannel; label: string }[] = [
-  { id: 'email', label: 'Email' },
-  { id: 'text', label: 'Text' },
-  { id: 'linkedin_connect', label: 'LinkedIn Connect' },
-  { id: 'linkedin_message', label: 'LinkedIn Message' },
-];
-
-const MODE_STORAGE_KEY = 'reply-generator-mode';
-const CHANNEL_STORAGE_KEY = 'reply-generator-channel';
-
-type HistoryRow = {
-  id: string;
-  mode: ReplyMode;
-  channel: ReplyChannel;
-  incoming_email: string;
-  generated_reply: string;
-  edited_reply: string | null;
-  created_at: string;
-  rating: 'good' | 'bad' | null;
-  rating_note: string | null;
-};
-
-// Split an email-channel draft into its subject and body for the mailto /
-// Outlook-draft handoff. Non-email drafts pass through as body only.
-function splitDraftForEmail(draft: string): { subject: string; body: string } {
-  const m = draft.match(/^subject:\s*(.+)\r?\n\r?\n?/i);
-  if (!m) return { subject: '', body: draft.trim() };
-  return { subject: m[1].trim(), body: draft.slice(m[0].length).trim() };
-}
-
-// Result of the server-side audit pass (banned phrases + editor checklist),
-// shown under the draft so George sees a real check happened and what it
-// caught. Shape mirrors the route's AuditOutcome.
-type AuditSummary = {
-  passed: boolean | null;
-  checked: string;
-  findings: string[];
-  warning: string | null;
-};
-
-// A CRM contact George can connect a draft to via the search bar. The
-// server loads the full row (tier, deals, last touch, notes, touch log) and
-// feeds it to the generation and the audit's trigger check.
 type ConnectedContact = {
   id: string;
-  table: 'brokers' | 'partners' | 'prospects' | 'cold_brokers';
+  table: ContactTable;
   name: string;
   company: string;
-  // For the Open in Mail / Open in Text handoff.
   email: string;
   phone: string;
   mobile: string;
-  // Relationship tier ('A'/'B'/'C' for brokers; unused for other tables) —
-  // drives mode auto-detection on connect.
   tier: string;
 };
 
-// Auto-pick the mode when a contact is connected: the matched table (and
-// broker tier) is a stronger signal than whatever mode was already selected.
-// It's a default, not a lock — any manual mode click afterwards still wins.
-function modeForContact(c: ConnectedContact): ReplyMode {
-  if (c.table === 'brokers') {
-    return c.tier === 'A' || c.tier === 'B' ? 'cre_referral' : 'broker_prospecting';
-  }
-  if (c.table === 'partners') return 'cre_referral';
-  if (c.table === 'prospects') return 'client_prospecting';
-  return 'broker_prospecting'; // cold_brokers
-}
+type ContactCard = {
+  name: string;
+  company: string;
+  tier: string | null;
+  bucket: string;
+  lastTouch: string | null;
+  lastTouchKind: string | null;
+  daysSinceTouch: number | null;
+  recentDrafts: number;
+  signals: string[];
+  touchedThisWeek: boolean;
+};
 
-const contactTablePill: Record<ConnectedContact['table'], { label: string; pill: Pill }> = {
+type DraftInfo = { mode: string; channel: string; body: string; warnings: string[] };
+
+type ChatMsg = {
+  role: 'user' | 'assistant';
+  content: string;
+  drafts?: DraftInfo[];
+};
+
+type Pill = 'accent' | 'purple' | 'teal' | 'amber' | 'red' | 'blue' | 'muted';
+
+const tablePill: Record<ContactTable, { label: string; pill: Pill }> = {
   brokers: { label: 'Broker', pill: 'purple' },
   partners: { label: 'Partner', pill: 'teal' },
   prospects: { label: 'Prospect', pill: 'accent' },
   cold_brokers: { label: 'Cold Broker', pill: 'blue' },
 };
 
-// Loads a slim name/company list from all four contact tables once, for the
-// client-side typeahead. ~850 rows total, small columns — cheap to hold.
+const MODE_LABEL: Record<string, string> = {
+  cre_referral: 'Mode 1 · Relationship',
+  broker_prospecting: 'Mode 2a · Broker',
+  client_prospecting: 'Mode 2b · Client',
+  internal: 'Internal',
+};
+
+const CHANNEL_LABEL: Record<string, string> = {
+  email: 'Email',
+  text: 'Text',
+  linkedin_connect: 'LinkedIn Connect',
+  linkedin_message: 'LinkedIn Msg',
+};
+
+// voice_samples.channel uses the channel family, not the reply channel.
+function channelFamily(channel: string): string {
+  return channel.startsWith('linkedin') ? 'linkedin' : channel;
+}
+
+// ============ contact index (client typeahead) ============
+
 async function loadContactIndex(): Promise<ConnectedContact[]> {
   const [brokers, partners, prospects, cold] = await Promise.all([
     supabase.from('brokers').select('id, first_name, last_name, firm, email, phone, mobile, tier'),
@@ -130,734 +115,385 @@ async function loadContactIndex(): Promise<ConnectedContact[]> {
   return out.filter((c) => c.name);
 }
 
-function modeLabel(mode: ReplyMode): string {
-  return MODES.find((m) => m.id === mode)?.label || mode;
+// ============ assistant message rendering ============
+
+type Segment = { kind: 'text'; text: string } | { kind: 'draft'; draft: DraftInfo };
+
+// Split an assistant message into prose and draft-card segments. Warnings
+// come from the server's drafts array, matched by order.
+function segmentMessage(content: string, drafts: DraftInfo[] | undefined): Segment[] {
+  const re = /<<<DRAFT\s+mode=([a-z_0-9]+)\s+channel=([a-z_0-9]+)>>>\n?([\s\S]*?)\n?<<<END>>>/g;
+  const segments: Segment[] = [];
+  let last = 0;
+  let draftIdx = 0;
+  for (const m of content.matchAll(re)) {
+    const before = content.slice(last, m.index).trim();
+    if (before) segments.push({ kind: 'text', text: before });
+    const fromServer = drafts?.[draftIdx];
+    segments.push({
+      kind: 'draft',
+      draft: fromServer || { mode: m[1], channel: m[2], body: m[3].trim(), warnings: [] },
+    });
+    draftIdx++;
+    last = (m.index || 0) + m[0].length;
+  }
+  const after = content.slice(last).trim();
+  if (after) segments.push({ kind: 'text', text: after });
+  if (!segments.length) segments.push({ kind: 'text', text: content });
+  return segments;
 }
 
-function modePill(mode: ReplyMode): Pill {
-  return MODES.find((m) => m.id === mode)?.pill || 'muted';
-}
+// ============ page ============
 
-function channelLabel(channel: ReplyChannel): string {
-  return CHANNELS.find((c) => c.id === channel)?.label || channel;
-}
-
-// Copy button with its own "Copied" feedback so multiple instances (output box
-// + each history row) don't share state.
-function CopyButton({ text, primary }: { text: string; primary?: boolean }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      style={primary ? btnPrimary : btnGhost}
-      onClick={async () => {
-        await navigator.clipboard.writeText(text);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      }}
-    >
-      {copied ? 'Copied' : 'Copy'}
-    </button>
-  );
-}
-
-const textareaStyle: React.CSSProperties = {
-  ...inputBase,
-  resize: 'vertical',
-  lineHeight: 1.5,
-  fontSize: 13,
-};
-
-const selectorBtn = (active: boolean): React.CSSProperties => ({
-  ...btnGhost,
-  background: active ? C.accentBg : 'transparent',
-  borderColor: active ? C.accent : C.border,
-  color: active ? C.accent : C.muted,
-  fontWeight: 600,
-});
-
-export default function ReplyPage() {
-  const [mode, setMode] = useState<ReplyMode>('cre_referral');
-  const [channel, setChannel] = useState<ReplyChannel>('email');
-  const [incomingEmail, setIncomingEmail] = useState('');
-  const [threadContext, setThreadContext] = useState('');
-  const [showContext, setShowContext] = useState(false);
-  const [reply, setReply] = useState('');
-  // What the model last returned, to detect hand edits, and the history row id
-  // so a review pass lands on the right record.
-  const [lastGenerated, setLastGenerated] = useState('');
-  const [replyId, setReplyId] = useState<string | null>(null);
-  const [audit, setAudit] = useState<AuditSummary | null>(null);
-  // Contact connect: search over the CRM, pick the account this draft is for.
-  const [contact, setContact] = useState<ConnectedContact | null>(null);
-  const [contactQuery, setContactQuery] = useState('');
+export default function ReplyChatPage() {
   const [contactIndex, setContactIndex] = useState<ConnectedContact[] | null>(null);
-  // Feedback loop: opt-in thumbs on the generated draft, note on thumbs down.
-  const [rating, setRating] = useState<'good' | 'bad' | null>(null);
-  const [showRatingNote, setShowRatingNote] = useState(false);
-  const [ratingNote, setRatingNote] = useState('');
-  const [historyBadOnly, setHistoryBadOnly] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [reviewing, setReviewing] = useState(false);
-  const [error, setError] = useState('');
-  const [history, setHistory] = useState<HistoryRow[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
+  const [contact, setContact] = useState<ConnectedContact | null>(null);
+  const [query, setQuery] = useState('');
+  const [card, setCard] = useState<ContactCard | null>(null);
+  const [cardLoading, setCardLoading] = useState(false);
+
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<Set<string>>(new Set());
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    const savedMode = localStorage.getItem(MODE_STORAGE_KEY);
-    if (savedMode && MODES.some((m) => m.id === savedMode)) setMode(savedMode as ReplyMode);
-    const savedChannel = localStorage.getItem(CHANNEL_STORAGE_KEY);
-    if (savedChannel && CHANNELS.some((c) => c.id === savedChannel)) {
-      setChannel(savedChannel as ReplyChannel);
-    }
-    setMounted(true);
-    loadHistory();
+    loadContactIndex().then(setContactIndex).catch(() => setContactIndex([]));
   }, []);
 
-  function pickMode(m: ReplyMode) {
-    setMode(m);
-    localStorage.setItem(MODE_STORAGE_KEY, m);
-  }
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, sending]);
 
-  function pickChannel(c: ReplyChannel) {
-    setChannel(c);
-    localStorage.setItem(CHANNEL_STORAGE_KEY, c);
-  }
-
-  // Lazily fill the typeahead index the first time George types in the
-  // contact search.
-  async function ensureContactIndex() {
-    if (contactIndex) return;
-    setContactIndex(await loadContactIndex());
-  }
-
-  const contactMatches =
-    contactQuery.trim().length >= 2 && contactIndex
+  const matches =
+    query.trim().length >= 2 && contactIndex
       ? contactIndex
-          .filter((c) => {
-            const q = contactQuery.trim().toLowerCase();
-            return c.name.toLowerCase().includes(q) || c.company.toLowerCase().includes(q);
-          })
+          .filter((c) => `${c.name} ${c.company}`.toLowerCase().includes(query.trim().toLowerCase()))
           .slice(0, 8)
       : [];
 
-  async function loadHistory() {
-    const { data, error: err } = await supabase
-      .from('reply_drafts')
-      .select('id, mode, channel, incoming_email, generated_reply, edited_reply, created_at, rating, rating_note')
-      .order('created_at', { ascending: false })
-      .limit(25);
-    if (err) {
-      console.error('loadHistory:', err);
-      return;
+  async function connectContact(c: ConnectedContact) {
+    setContact(c);
+    setQuery('');
+    setCard(null);
+    setCardLoading(true);
+    try {
+      const res = await fetch('/api/reply-chat', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ contactId: c.id, contactTable: c.table, messages: [] }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) setCard(data.card || null);
+    } finally {
+      setCardLoading(false);
     }
-    setHistory((data as HistoryRow[]) || []);
   }
 
-  async function generate() {
-    if (!incomingEmail.trim() || generating) return;
-    // A typed-but-unpicked contact search must not fall through to a draft
-    // with no contact attached (that silent path left most reply_drafts rows
-    // with contact_id null). If the query matches anything, force a pick or
-    // an explicit clear before generating.
-    if (!contact && contactQuery.trim().length >= 2 && contactMatches.length > 0) {
-      setError(
-        contactMatches.length === 1
-          ? `"${contactQuery.trim()}" matches a contact — pick it below, or clear the search to draft without one`
-          : `"${contactQuery.trim()}" matches ${contactMatches.length} contacts — pick one below, or clear the search to draft without one`
-      );
-      return;
-    }
-    setGenerating(true);
-    setError('');
+  function disconnectContact() {
+    setContact(null);
+    setCard(null);
+  }
+
+  async function send() {
+    const text = input.trim();
+    if (!text || sending) return;
+    setError(null);
+    setInput('');
+    const history = [...messages, { role: 'user' as const, content: text }];
+    setMessages(history);
+    setSending(true);
     try {
-      const res = await fetch('/api/reply-generator', {
+      const res = await fetch('/api/reply-chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          mode,
-          channel,
-          incomingEmail,
-          threadContext: threadContext.trim() || undefined,
           contactId: contact?.id,
           contactTable: contact?.table,
+          messages: history.map(({ role, content }) => ({ role, content })),
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
-      setReply(data.generatedReply);
-      setLastGenerated(data.generatedReply);
-      setReplyId(data.id || null);
-      setAudit(data.audit || null);
-      setRating(null);
-      setShowRatingNote(false);
-      setRatingNote('');
-      loadHistory();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong');
-    } finally {
-      setGenerating(false);
+      if (!res.ok) {
+        setError(data?.error || `Request failed (HTTP ${res.status})`);
+        // Put the message back in the box so nothing typed is lost.
+        setMessages(messages);
+        setInput(text);
+      } else {
+        setMessages([...history, { role: 'assistant', content: data.reply, drafts: data.drafts }]);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error');
+      setMessages(messages);
+      setInput(text);
     }
+    setSending(false);
+    inputRef.current?.focus();
   }
 
-  // Run George's hand-edited draft back through the model to verify it against
-  // the voice rules. Keeps his changes, fixes only real problems.
-  async function reviewEdits() {
-    if (!reply.trim() || reviewing || generating) return;
-    setReviewing(true);
-    setError('');
+  async function copyDraft(key: string, draft: DraftInfo) {
     try {
-      const res = await fetch('/api/reply-generator', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode,
-          channel,
-          incomingEmail,
-          threadContext: threadContext.trim() || undefined,
-          editedReply: reply,
-          id: replyId || undefined,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
-      setReply(data.generatedReply);
-      setLastGenerated(data.generatedReply);
-      // The audit summary describes the generated draft; after a review pass
-      // of George's own edits it no longer applies.
-      setAudit(null);
-      loadHistory();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong');
-    } finally {
-      setReviewing(false);
+      await navigator.clipboard.writeText(draft.body);
+      setCopied(key);
+      setTimeout(() => setCopied((k) => (k === key ? null : k)), 1500);
+    } catch {
+      // clipboard unavailable — nothing to do
     }
   }
 
-  // Thumbs on the generated draft. Clicking the active thumb again clears it.
-  // Opt-in — nothing in the flow depends on rating.
-  async function rate(value: 'good' | 'bad') {
-    if (!replyId) return;
-    const next = rating === value ? null : value;
-    setRating(next);
-    setShowRatingNote(next === 'bad');
-    if (next !== 'bad') setRatingNote('');
-    const { error: err } = await supabase
-      .from('reply_drafts')
-      .update({ rating: next, ...(next === 'bad' ? {} : { rating_note: null }) })
-      .eq('id', replyId);
-    if (err) console.error('rate:', err);
-    loadHistory();
+  async function saveToBank(key: string, draft: DraftInfo) {
+    await saveVoiceSample(channelFamily(draft.channel), draft.body, {
+      mode: draft.mode,
+      source: 'reply_chat',
+      contactName: contact?.name,
+    });
+    setSaved((prev) => new Set(prev).add(key));
   }
 
-  async function saveRatingNote() {
-    if (!replyId) return;
-    const note = ratingNote.trim();
-    const { error: err } = await supabase
-      .from('reply_drafts')
-      .update({ rating_note: note || null })
-      .eq('id', replyId);
-    if (err) console.error('saveRatingNote:', err);
-    loadHistory();
+  function resetThread() {
+    setMessages([]);
+    setSaved(new Set());
+    setError(null);
   }
 
-  // Start fresh: input, context, draft, and audit go; connected contact,
-  // mode, and channel stay (George often writes several things in a row to
-  // or about the same person on the same channel).
-  function clearAll() {
-    setIncomingEmail('');
-    setThreadContext('');
-    setShowContext(false);
-    setReply('');
-    setLastGenerated('');
-    setReplyId(null);
-    setAudit(null);
-    setRating(null);
-    setShowRatingNote(false);
-    setRatingNote('');
-    setError('');
-  }
-
-  // Open-in-app handoff, reusing the exact Do This Now mechanism
-  // (composeInOutlook: Graph draft -> mailto fallback; sms: link for texts).
-  function openInMail() {
-    const { subject, body } = splitDraftForEmail(reply);
-    composeInOutlook(contact?.email || '', subject, body);
-  }
-
-  // Texts never carry a subject line; strip one if the draft has it (only
-  // happens when switching channel after generating an email draft).
-  const smsHref =
-    channel === 'text'
-      ? buildSmsLink(contact?.mobile || contact?.phone || '', splitDraftForEmail(reply).body)
-      : null;
-
-  if (!mounted) return null;
+  const empty = messages.length === 0;
 
   return (
     <div style={{ background: C.bg, color: C.text, minHeight: '100vh' }}>
-      <header style={{ borderBottom: `1px solid ${C.border}` }}>
-        <div
-          style={{ maxWidth: 900, margin: '0 auto', padding: '18px 20px' }}
-          className="flex items-baseline justify-between flex-wrap gap-2"
-        >
-          <div className="flex items-baseline gap-3">
-            <h1 style={{ fontFamily: F.display, fontSize: 20, fontWeight: 700 }}>Reply Generator</h1>
-            <span style={labelMono}>paste, generate, copy</span>
+      <header style={{ borderBottom: `1px solid ${C.border}`, padding: '16px 20px' }}>
+        <div style={{ maxWidth: 760, margin: '0 auto' }} className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <Link href="/" style={{ ...labelMono, textDecoration: 'none' }}>← Dashboard</Link>
+            <h1 style={{ fontFamily: F.display, fontSize: 18, fontWeight: 700 }}>Reply Generator</h1>
           </div>
-          <Link href="/" style={{ ...labelMono, color: C.muted, textDecoration: 'none' }}>
-            ← Back to app
-          </Link>
+          {!empty && (
+            <button onClick={resetThread} style={btnGhost} disabled={sending}>
+              New conversation
+            </button>
+          )}
         </div>
       </header>
 
-      <main
-        style={{ maxWidth: 900, margin: '0 auto', padding: '24px 20px 48px' }}
-        className="flex flex-col gap-4 fade-up"
-      >
-        {/* Mode selector */}
-        <div className="flex flex-col gap-2">
-          <span style={labelMono}>Who is this for</span>
-          <div className="flex gap-2 flex-wrap">
-            {MODES.map((m) => (
-              <button key={m.id} onClick={() => pickMode(m.id)} style={selectorBtn(mode === m.id)}>
-                {m.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Channel selector */}
-        <div className="flex flex-col gap-2">
-          <span style={labelMono}>Channel</span>
-          <div className="flex gap-2 flex-wrap">
-            {CHANNELS.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => pickChannel(c.id)}
-                style={selectorBtn(channel === c.id)}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Incoming message / situation */}
-        <div style={{ ...card, padding: 16 }} className="flex flex-col gap-3">
-          <label style={labelMono}>
-            Paste the email or message you&apos;re replying to, or notes on the situation
-          </label>
-          <textarea
-            value={incomingEmail}
-            onChange={(e) => setIncomingEmail(e.target.value)}
-            rows={8}
-            placeholder={
-              'Paste the full email or text here...\n\nOr for fresh outreach, describe what you know: "Acme Corp is moving from Hoboken to Jersey City this fall, ~80 people, CFO is Jane Smith."'
-            }
-            style={textareaStyle}
-          />
-
-          {/* Contact connect — search the CRM and tie this draft to the real
-              account, so the model works from actual relationship facts
-              (deals, last touch, notes) instead of guessing. */}
-          <div>
-            <label style={labelMono}>Connect contact (optional)</label>
-            {contact ? (
-              <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: 6 }}>
-                <span style={pillStyle(contactTablePill[contact.table].pill)}>
-                  {contactTablePill[contact.table].label}
-                </span>
-                <span style={{ fontFamily: F.body, fontSize: 13, color: C.text }}>
-                  {contact.name}
-                  {contact.company ? ` · ${contact.company}` : ''}
-                </span>
-                <button
-                  onClick={() => {
-                    setContact(null);
-                    setContactQuery('');
-                  }}
-                  title="Disconnect contact"
-                  style={{ ...btnGhost, padding: '3px 9px', fontSize: 11 }}
-                >
-                  ✕
-                </button>
+      <main style={{ maxWidth: 760, margin: '0 auto', padding: '20px 20px 140px' }}>
+        {/* Contact connect */}
+        <div style={{ marginBottom: 16 }}>
+          {contact ? (
+            <div style={{ ...cardStyle, padding: 14 }}>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span style={{ fontFamily: F.body, fontWeight: 600, fontSize: 15 }}>{contact.name}</span>
+                  {contact.company && <span style={{ ...labelMono }}>{contact.company}</span>}
+                  <span style={pillStyle(tablePill[contact.table].pill)}>{tablePill[contact.table].label}</span>
+                  {card?.tier && <span style={pillStyle('muted')}>Tier {card.tier}</span>}
+                  {card && card.bucket !== 'active' && (
+                    <span style={pillStyle('amber')}>{card.bucket.replace(/_/g, ' ')}</span>
+                  )}
+                </div>
+                <button onClick={disconnectContact} style={{ ...btnGhost, padding: '4px 10px' }}>✕</button>
               </div>
-            ) : (
-              <div style={{ position: 'relative', marginTop: 6 }}>
-                <input
-                  value={contactQuery}
-                  onChange={(e) => setContactQuery(e.target.value)}
-                  onFocus={ensureContactIndex}
-                  placeholder="Search name or company to connect the account…"
-                  style={{ ...inputBase, fontSize: 13 }}
-                />
-                {contactMatches.length > 0 && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: 'calc(100% + 4px)',
-                      left: 0,
-                      right: 0,
-                      zIndex: 20,
-                      background: C.surface,
-                      border: `1px solid ${C.border2}`,
-                      borderRadius: 10,
-                      overflow: 'hidden',
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-                    }}
-                  >
-                    {contactMatches.map((c) => (
-                      <button
-                        key={`${c.table}-${c.id}`}
-                        onClick={() => {
-                          setContact(c);
-                          setContactQuery('');
-                          // Auto-detect the mode from the matched table/tier —
-                          // overrides the current pick; a manual click after
-                          // this still wins as usual.
-                          pickMode(modeForContact(c));
-                        }}
-                        className="flex items-center gap-2"
-                        style={{
-                          display: 'flex',
-                          width: '100%',
-                          textAlign: 'left',
-                          padding: '8px 12px',
-                          background: 'transparent',
-                          border: 'none',
-                          borderBottom: `1px solid ${C.border}`,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <span style={pillStyle(contactTablePill[c.table].pill)}>
-                          {contactTablePill[c.table].label}
-                        </span>
-                        <span style={{ fontFamily: F.body, fontSize: 13, color: C.text }}>
-                          {c.name}
-                        </span>
-                        <span style={{ fontFamily: F.mono, fontSize: 11, color: C.muted }}>
-                          {c.company}
-                        </span>
-                      </button>
-                    ))}
+              {cardLoading && <div style={{ ...labelMono, marginTop: 8 }}>Loading history…</div>}
+              {card && (
+                <div style={{ marginTop: 8, fontSize: 12, color: C.muted, lineHeight: 1.6 }}>
+                  <div style={{ color: card.touchedThisWeek ? C.amber : C.muted }}>
+                    {card.lastTouch
+                      ? `Last touch: ${card.lastTouch} (${card.lastTouchKind}, ${card.daysSinceTouch}d ago)` +
+                        (card.touchedThisWeek ? ' — touched this week' : '')
+                      : 'No touches on record'}
+                    {card.recentDrafts > 0 ? ` · ${card.recentDrafts} recent draft${card.recentDrafts === 1 ? '' : 's'}` : ''}
                   </div>
-                )}
-                {contactQuery.trim().length >= 2 && contactIndex && contactMatches.length === 0 && (
-                  <div style={{ ...labelMono, marginTop: 4, textTransform: 'none', letterSpacing: 0 }}>
-                    No matching account — draft will run without CRM context.
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {showContext ? (
-            <>
-              <label style={labelMono}>Thread context or background (optional)</label>
-              <textarea
-                value={threadContext}
-                onChange={(e) => setThreadContext(e.target.value)}
-                rows={5}
-                placeholder="Earlier messages in the chain, or background notes..."
-                style={textareaStyle}
-              />
-            </>
-          ) : (
-            <button
-              onClick={() => setShowContext(true)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: C.muted,
-                fontFamily: F.body,
-                fontSize: 12,
-                cursor: 'pointer',
-                textAlign: 'left',
-                padding: 0,
-              }}
-            >
-              + Add thread context or background (optional)
-            </button>
-          )}
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={generate}
-              disabled={!incomingEmail.trim() || generating}
-              style={{
-                ...btnPrimary,
-                opacity: !incomingEmail.trim() || generating ? 0.5 : 1,
-                cursor: !incomingEmail.trim() || generating ? 'default' : 'pointer',
-              }}
-            >
-              {generating ? 'Generating…' : 'Generate'}
-            </button>
-            {(incomingEmail.trim() || threadContext.trim() || reply || lastGenerated) && (
-              <button onClick={clearAll} disabled={generating || reviewing} style={btnGhost} title="Clear the input, context, draft, and audit. Keeps the connected contact, mode, and channel.">
-                ✕ Clear
-              </button>
-            )}
-            {error && <span style={{ color: C.red, fontSize: 12, fontFamily: F.body }}>{error}</span>}
-          </div>
-        </div>
-
-        {/* Output — editable so George can tweak lines directly, then run his
-            version back through the model with "Check my edits". */}
-        {(reply || lastGenerated) && (
-          <div style={{ ...card, padding: 16 }} className="flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <span style={labelMono}>
-                Draft · {modeLabel(mode)} · {channelLabel(channel)} · editable
-              </span>
-              <div className="flex gap-2 flex-wrap">
-                {reply.trim() !== lastGenerated.trim() && (
-                  <button
-                    onClick={reviewEdits}
-                    disabled={reviewing || generating || !reply.trim()}
-                    style={{ ...btnPrimary, opacity: reviewing ? 0.6 : 1 }}
-                  >
-                    {reviewing ? 'Checking…' : 'Check my edits'}
-                  </button>
-                )}
-                <button onClick={generate} disabled={generating || reviewing} style={btnGhost}>
-                  {generating ? '…' : 'Regenerate'}
-                </button>
-                <CopyButton text={reply} primary={reply.trim() === lastGenerated.trim()} />
-                {channel === 'email' && (
-                  <button onClick={openInMail} style={btnSecondary} title={contact?.email ? `To: ${contact.email}` : 'Recipient left blank — fill it in the mail app'}>
-                    ✉ Open in Mail
-                  </button>
-                )}
-                {channel === 'text' && smsHref && (
-                  <a href={smsHref} style={{ ...btnSecondary, textDecoration: 'none', display: 'inline-block' }} title={contact?.mobile || contact?.phone ? `To: ${contact.mobile || contact.phone}` : 'Recipient left blank — pick it in the messages app'}>
-                    💬 Open in Text
-                  </a>
-                )}
-                {replyId && (
-                  <>
-                    <button
-                      onClick={() => rate('good')}
-                      title="This one landed"
-                      style={{ ...btnGhost, padding: '8px 10px', borderColor: rating === 'good' ? C.accent : C.border, color: rating === 'good' ? C.accent : C.muted }}
-                    >
-                      👍
-                    </button>
-                    <button
-                      onClick={() => rate('bad')}
-                      title="This one was off"
-                      style={{ ...btnGhost, padding: '8px 10px', borderColor: rating === 'bad' ? C.red : C.border, color: rating === 'bad' ? C.red : C.muted }}
-                    >
-                      👎
-                    </button>
-                  </>
-                )}
-              </div>
+                  {card.signals.slice(0, 2).map((sig, i) => (
+                    <div key={i} style={{ color: '#c8a84a' }}>◆ {sig}</div>
+                  ))}
+                </div>
+              )}
             </div>
-            {channel === 'text' && (
-              <span style={{ color: C.muted2, fontSize: 11, fontFamily: F.body, marginTop: -6 }}>
-                Open in Text works reliably on your phone; desktop browsers often have no app registered for sms links.
-              </span>
-            )}
-            {showRatingNote && (
-              <div className="flex items-center gap-2">
-                <input
-                  value={ratingNote}
-                  onChange={(e) => setRatingNote(e.target.value)}
-                  onBlur={saveRatingNote}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          ) : (
+            <div style={{ position: 'relative' }}>
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={contactIndex ? 'Connect a contact — search name or company…' : 'Loading contacts…'}
+                disabled={!contactIndex}
+                style={inputBase}
+              />
+              {matches.length > 0 && (
+                <div
+                  style={{
+                    ...cardStyle, position: 'absolute', top: '100%', left: 0, right: 0,
+                    zIndex: 20, marginTop: 4, overflow: 'hidden',
                   }}
-                  placeholder="What was off? (optional)"
-                  style={{ ...inputBase, fontSize: 12, maxWidth: 420 }}
-                />
-              </div>
-            )}
-            <textarea
-              value={reply}
-              onChange={(e) => setReply(e.target.value)}
-              rows={Math.min(18, Math.max(6, reply.split('\n').length + 2))}
-              style={{
-                ...textareaStyle,
-                fontSize: 14,
-                lineHeight: 1.6,
-                padding: 14,
-              }}
-            />
-            {/* Audit summary — the visible record that a real check ran and
-                what it caught. */}
-            {audit && (
-              <div
-                style={{
-                  background: C.surface2,
-                  border: `1px solid ${audit.warning ? C.red : C.border}`,
-                  borderRadius: 8,
-                  padding: '10px 12px',
-                  fontSize: 12,
-                  fontFamily: F.mono,
-                  lineHeight: 1.7,
-                }}
-              >
-                <div style={{ color: C.muted }}>Checked: {audit.checked}</div>
-                {audit.warning && (
-                  <div style={{ color: C.red }}>⚠ Warning: {audit.warning}. Do not copy as is.</div>
-                )}
-                {audit.findings.length === 0 ? (
-                  <div style={{ color: C.accent }}>No issues found</div>
-                ) : (
-                  audit.findings
-                    .filter((f) => f !== audit.warning)
-                    .map((f, i) => (
-                      <div key={i} style={{ color: C.amber }}>
-                        Fixed: {f}
-                      </div>
-                    ))
-                )}
-                {audit.passed === null && (
-                  <div style={{ color: C.muted }}>
-                    (editor pass unavailable this run, mechanical checks only)
-                  </div>
-                )}
-              </div>
-            )}
-            {reply.trim() !== lastGenerated.trim() && (
-              <span style={{ color: C.muted, fontSize: 12, fontFamily: F.body }}>
-                You&apos;ve edited this draft. Check my edits runs your version back
-                through the voice rules before you send it.
-              </span>
-            )}
+                >
+                  {matches.map((c) => (
+                    <button
+                      key={`${c.table}:${c.id}`}
+                      onClick={() => connectContact(c)}
+                      className="flex items-center gap-2"
+                      style={{
+                        display: 'flex', width: '100%', textAlign: 'left', padding: '10px 12px',
+                        fontSize: 13, fontFamily: F.body, color: C.text, background: 'transparent',
+                        borderBottom: `1px solid ${C.border}`, cursor: 'pointer',
+                      }}
+                    >
+                      <span style={{ fontWeight: 600 }}>{c.name}</span>
+                      {c.company && <span style={{ color: C.muted }}>{c.company}</span>}
+                      <span style={{ marginLeft: 'auto' }}>
+                        <span style={pillStyle(tablePill[c.table].pill)}>{tablePill[c.table].label}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Thread */}
+        {empty && (
+          <div style={{ ...cardStyle, padding: 24, textAlign: 'center', color: C.muted, fontSize: 13, lineHeight: 1.7 }}>
+            Describe the situation in your own words — who it&apos;s for, what happened, what you want.
+            <br />
+            &ldquo;Ran into him at IOREBA, said he&apos;d send the Hoboken requirements — LinkedIn message following up.&rdquo;
+            <br />
+            Mode and channel are picked up from what you say. React to a draft to revise it.
           </div>
         )}
 
-        {/* History */}
-        <div style={{ ...card, padding: 16 }} className="flex flex-col gap-3">
-          <button
-            onClick={() => setShowHistory((s) => !s)}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: 0,
-              textAlign: 'left',
-            }}
-            className="flex items-center justify-between"
-          >
-            <span style={{ fontFamily: F.display, fontSize: 15, fontWeight: 600, color: C.text }}>
-              History
-            </span>
-            <span style={labelMono}>
-              {history.length} recent {showHistory ? '▾' : '▸'}
-            </span>
-          </button>
-
-          {showHistory && (
-            <div className="flex gap-2">
-              <button
-                onClick={() => setHistoryBadOnly((v) => !v)}
-                style={{ ...(historyBadOnly ? btnPrimary : btnGhost), padding: '5px 10px', fontSize: 11 }}
-              >
-                👎 Rated bad only
-              </button>
-            </div>
-          )}
-
-          {showHistory &&
-            (history.length === 0 ? (
-              <div style={{ color: C.muted, fontSize: 13, fontFamily: F.body }}>
-                No drafts generated yet.
-              </div>
-            ) : (
-              history
-                .filter((h) => !historyBadOnly || h.rating === 'bad')
-                .map((h) => {
-                const expanded = expandedId === h.id;
-                const finalText = h.edited_reply || h.generated_reply;
-                return (
-                  <div
-                    key={h.id}
-                    style={{
-                      background: C.surface2,
-                      border: `1px solid ${C.border}`,
-                      borderRadius: 10,
-                      padding: 12,
-                    }}
-                    className="flex flex-col gap-2"
-                  >
-                    <button
-                      onClick={() => setExpandedId(expanded ? null : h.id)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}
-                      className="flex items-center justify-between gap-2"
-                    >
-                      <span
+        <div className="flex flex-col gap-3">
+          {messages.map((m, mi) => (
+            <div key={mi} className="flex flex-col gap-2">
+              {m.role === 'user' ? (
+                <div
+                  style={{
+                    alignSelf: 'flex-end', maxWidth: '85%', background: C.surface2,
+                    border: `1px solid ${C.border}`, borderRadius: '14px 14px 4px 14px',
+                    padding: '10px 14px', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap',
+                  }}
+                >
+                  {m.content}
+                </div>
+              ) : (
+                segmentMessage(m.content, m.drafts).map((seg, si) => {
+                  if (seg.kind === 'text') {
+                    return (
+                      <div
+                        key={si}
                         style={{
-                          color: C.muted,
-                          fontSize: 12,
-                          fontFamily: F.body,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          flex: 1,
+                          alignSelf: 'flex-start', maxWidth: '90%', color: C.muted,
+                          fontSize: 13, lineHeight: 1.6, padding: '2px 4px', whiteSpace: 'pre-wrap',
                         }}
                       >
-                        {h.incoming_email.slice(0, 110)}
-                      </span>
-                      {h.rating && (
-                        <span
-                          title={h.rating === 'bad' ? h.rating_note || 'Rated bad' : 'Rated good'}
-                          style={{ fontSize: 13, flexShrink: 0 }}
-                        >
-                          {h.rating === 'good' ? '👍' : '👎'}
-                        </span>
-                      )}
-                      <span style={pillStyle(modePill(h.mode))}>{modeLabel(h.mode)}</span>
-                      <span style={pillStyle('muted')}>{channelLabel(h.channel)}</span>
-                      <span style={labelMono}>{new Date(h.created_at).toLocaleDateString()}</span>
-                    </button>
-
-                    {expanded && (
-                      <>
-                        <div style={{ ...labelMono }}>Incoming</div>
-                        <div
-                          style={{
-                            whiteSpace: 'pre-wrap',
-                            fontSize: 12,
-                            color: C.muted,
-                            fontFamily: F.body,
-                            lineHeight: 1.5,
-                          }}
-                        >
-                          {h.incoming_email}
-                        </div>
-                        <div style={{ ...labelMono }}>
-                          {h.edited_reply ? 'Draft (edited)' : 'Draft'}
-                        </div>
-                        <div
-                          style={{
-                            whiteSpace: 'pre-wrap',
-                            fontSize: 13,
-                            fontFamily: F.body,
-                            lineHeight: 1.6,
-                          }}
-                        >
-                          {finalText}
-                        </div>
-                        {h.rating === 'bad' && h.rating_note && (
-                          <div style={{ fontSize: 12, color: C.red, fontFamily: F.body }}>
-                            👎 {h.rating_note}
-                          </div>
+                        {seg.text}
+                      </div>
+                    );
+                  }
+                  const d = seg.draft;
+                  const key = `${mi}:${si}`;
+                  return (
+                    <div key={si} style={{ ...cardStyle, alignSelf: 'stretch', padding: 14 }}>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span style={pillStyle('accent')}>{MODE_LABEL[d.mode] || d.mode}</span>
+                        <span style={pillStyle('blue')}>{CHANNEL_LABEL[d.channel] || d.channel}</span>
+                        {d.channel === 'linkedin_connect' && (
+                          <span style={{ ...labelMono, textTransform: 'none' }}>{d.body.length}/280</span>
                         )}
-                        <div>
-                          <CopyButton text={finalText} />
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 10, fontFamily: F.body, fontSize: 14, lineHeight: 1.65,
+                          whiteSpace: 'pre-wrap', color: C.text,
+                        }}
+                      >
+                        {d.body}
+                      </div>
+                      {d.warnings.length > 0 && (
+                        <div style={{ marginTop: 10, color: C.red, fontSize: 12, lineHeight: 1.5 }}>
+                          ⚠ {d.warnings.join(' · ')}
                         </div>
-                      </>
-                    )}
-                  </div>
-                );
-              })
-            ))}
+                      )}
+                      <div className="flex gap-2 flex-wrap" style={{ marginTop: 12 }}>
+                        <button onClick={() => copyDraft(key, d)} style={btnPrimary}>
+                          {copied === key ? 'Copied ✓' : 'Copy'}
+                        </button>
+                        {contact?.email && d.channel === 'email' && (
+                          <a
+                            href={`mailto:${contact.email}`}
+                            style={{ ...btnGhost, textDecoration: 'none', display: 'inline-block' }}
+                          >
+                            Open in Mail
+                          </a>
+                        )}
+                        <button
+                          onClick={() => saveToBank(key, d)}
+                          disabled={saved.has(key)}
+                          style={{ ...btnGhost, color: saved.has(key) ? C.teal : C.muted }}
+                          title="Save this approved draft into the voice bank as a few-shot example for future drafts."
+                        >
+                          {saved.has(key) ? 'In voice bank ✓' : '+ Voice bank'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          ))}
+          {sending && <div style={{ ...labelMono, alignSelf: 'flex-start' }}>Drafting…</div>}
         </div>
+
+        {error && (
+          <div
+            style={{
+              marginTop: 12, background: C.redBg, border: `1px solid ${C.red}`,
+              borderRadius: 10, padding: '10px 14px', color: C.red, fontSize: 13,
+            }}
+          >
+            {error}
+          </div>
+        )}
+        <div ref={bottomRef} />
       </main>
+
+      {/* Composer */}
+      <div
+        style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0,
+          background: C.bg, borderTop: `1px solid ${C.border}`, padding: '12px 20px 16px',
+        }}
+      >
+        <div style={{ maxWidth: 760, margin: '0 auto' }} className="flex gap-2 items-end">
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                send();
+              }
+            }}
+            rows={Math.min(5, Math.max(1, input.split('\n').length))}
+            placeholder={
+              contact
+                ? `What's the situation with ${contact.name.split(' ')[0]}?`
+                : 'Describe the situation… (connect a contact above for full context)'
+            }
+            style={{ ...inputBase, resize: 'none', lineHeight: 1.5 }}
+            disabled={sending}
+          />
+          <button
+            onClick={send}
+            disabled={sending || !input.trim()}
+            style={{ ...btnPrimary, opacity: sending || !input.trim() ? 0.5 : 1 }}
+          >
+            Send
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
