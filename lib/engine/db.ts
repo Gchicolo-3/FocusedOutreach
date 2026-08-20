@@ -379,10 +379,20 @@ export function normalizeContactName(name?: string | null): string {
 // have a pending (unreviewed) draft. Name keys catch the same person existing
 // under different ids (e.g. a row in both brokers and partners), which
 // id-only dedup missed.
+// Dedupe key for a signal draft with no contact attached. Every news signal
+// has a null contact_id, so keying on contact alone let the same story draft
+// repeatedly (CoreWeave reached 13 pending copies). Company + signal type is
+// the identity of a contact-less signal draft.
+export function companySignalKey(companyName?: string | null, signalType?: string | null): string {
+  const company = normalizeContactName(companyName || '');
+  if (!company) return '';
+  return `company:${company}|${signalType || ''}`;
+}
+
 export async function getPendingDraftKeys(): Promise<Set<string>> {
   const { data, error } = await supabase
     .from('drafts')
-    .select('contact_id, contact_name')
+    .select('contact_id, contact_name, contact_company, signal_id')
     .eq('status', 'pending');
 
   if (error) {
@@ -390,11 +400,30 @@ export async function getPendingDraftKeys(): Promise<Set<string>> {
     return new Set();
   }
 
+  const rows = data || [];
+
+  // Contact-less signal drafts need the signal's type for their key; fetch
+  // the types for this batch's signal ids in one query. No FK join assumed.
+  const signalIds = [...new Set(rows.filter((r) => !r.contact_id && r.signal_id).map((r) => r.signal_id))];
+  const signalTypeById = new Map<string, string>();
+  if (signalIds.length) {
+    const { data: sigs, error: sigErr } = await supabase
+      .from('signals')
+      .select('id, signal_type')
+      .in('id', signalIds);
+    if (sigErr) console.error('getPendingDraftKeys signals:', sigErr.message);
+    for (const s of sigs || []) signalTypeById.set(s.id, s.signal_type);
+  }
+
   const keys = new Set<string>();
-  for (const r of data || []) {
+  for (const r of rows) {
     if (r.contact_id) keys.add(String(r.contact_id));
     const nameKey = normalizeContactName(r.contact_name);
     if (nameKey) keys.add(`name:${nameKey}`);
+    if (!r.contact_id) {
+      const key = companySignalKey(r.contact_company, r.signal_id ? signalTypeById.get(r.signal_id) : '');
+      if (key) keys.add(key);
+    }
   }
   return keys;
 }

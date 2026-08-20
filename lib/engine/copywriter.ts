@@ -5,6 +5,7 @@
 
 import { saveDraft, getRecentDraftBodiesForContacts } from './db';
 import { GEORGE_VOICE_CORE } from '../toneProfile';
+import { hasNamePlaceholder, fillNamePlaceholders } from '../replyText';
 
 // George's voice rules. The shared core (voice, hard rules, banned phrases,
 // structure, format) lives in GEORGE_VOICE_CORE so the dashboard compose route
@@ -239,6 +240,22 @@ async function draftItem(
       const lines = response.split('\n');
       subject = lines[0].replace('SUBJECT:', '').trim();
       body = lines.slice(1).join('\n').trim();
+    }
+
+    // A draft with an unfilled [First Name]-style placeholder must never
+    // reach the queue (same guard as the /reply route). Fill it when the
+    // contact's first name is known, otherwise skip the draft entirely.
+    if (hasNamePlaceholder(body) || (subject && hasNamePlaceholder(subject))) {
+      const firstName = (contactName || '').trim().split(/\s+/)[0];
+      if (firstName) {
+        body = fillNamePlaceholders(body, firstName);
+        if (subject) subject = fillNamePlaceholders(subject, firstName);
+      } else {
+        console.log(
+          `[Copywriter] Skipped: unfilled name placeholder, no contact name (${contactCompany || 'unknown company'})`
+        );
+        return null;
+      }
     }
 
     const draft = await saveDraft({

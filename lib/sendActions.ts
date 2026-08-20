@@ -17,6 +17,11 @@ export function openInMessages(phone: string, message: string): void {
   window.location.href = buildSmsLink(phone, message);
 }
 
+// THE email send path (Amendment 1, Aug 2026): email is sent manually, never
+// automatically. This opens the default mail client prefilled via mailto:.
+// Known constraint: some clients truncate mailto bodies around 2,000
+// characters. George's outreach runs well under that, so it's acceptable
+// here — do NOT extend this pattern to long-form email later.
 export function openInOutlook(email: string, subject: string, body: string): void {
   if (typeof window === 'undefined') return;
   const mailto = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(
@@ -25,10 +30,11 @@ export function openInOutlook(email: string, subject: string, body: string): voi
   window.location.href = mailto;
 }
 
-// Preferred email flow: create a real Outlook draft via Microsoft Graph and
-// open it in Outlook on the web, pre-filled and ready to review/send. Falls
-// back to the mailto handler when no Microsoft account is connected or the
-// request fails, so the button always does something.
+// DORMANT (Amendment 1, Aug 2026): Microsoft Graph was never authenticated —
+// ms_oauth_tokens has zero rows — so this "preferred flow" always burned a
+// round-trip and fell back to mailto. No UI calls it anymore; email goes
+// through openInOutlook above. Kept in place per the amendment: do not
+// delete, do not build on it.
 //
 // A blank tab is opened synchronously inside the click so the browser doesn't
 // treat the post-await open as a blocked popup; its location is set once the

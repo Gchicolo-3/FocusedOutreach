@@ -8,7 +8,7 @@ import { NextResponse } from 'next/server';
 import { runCadenceManager } from '@/lib/engine/cadence-manager';
 import { runCopywriter } from '@/lib/engine/copywriter';
 import { sendMorningDigest } from '@/lib/engine/digest';
-import { logAgentRun, getPendingDraftKeys, normalizeContactName } from '@/lib/engine/db';
+import { logAgentRun, getPendingDraftKeys, normalizeContactName, companySignalKey } from '@/lib/engine/db';
 import { isEngineRequestAuthorized } from '@/lib/engine/auth';
 import { runProspector } from '@/lib/engine/prospector';
 import { runNewsProspector } from '@/lib/engine/newsProspector';
@@ -86,7 +86,13 @@ export async function GET(request: Request) {
       ...qualified.actionable.map((s: any) => ({
         type: 'signal',
         data: s,
-        keys: [s.contact_id, nameKey(s.contact_name)],
+        // News signals carry no contact, which used to leave them keyless and
+        // undedupable — key those on company + signal type instead.
+        keys: [
+          s.contact_id,
+          nameKey(s.contact_name),
+          s.contact_id ? '' : companySignalKey(s.company_name, s.signal_type),
+        ],
       })),
       // dueTouches is already sorted most-overdue-first by the cadence manager
       ...dueTouches.map((c: any) => ({

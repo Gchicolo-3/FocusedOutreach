@@ -234,6 +234,39 @@ export async function logTouch(id: string, date: string, channel: Channel): Prom
   if (error) console.error(error);
 }
 
+// The loop-closing write for a completed outreach (Item 3c / Amendment 1):
+// one touch_log row, last_touch = today, next_due recomputed from tier. Every
+// path that marks a message sent must come through here — a touch_log row
+// alone never advances the cadence, which is how the due list grew unbounded.
+// Dates stay ISO (YYYY-MM-DD): due checks are TEXT string comparisons.
+export async function recordOutreachTouch(
+  contactTable: string | null | undefined,
+  contactId: string,
+  channel: Channel
+): Promise<void> {
+  const today = new Date().toISOString().split('T')[0];
+  await logTouch(contactId, today, channel);
+
+  if (contactTable === 'brokers') {
+    await updateBroker(contactId, { lastTouch: today }); // recomputes nextDue + status
+  } else if (contactTable === 'partners') {
+    await updatePartner(contactId, { lastTouch: today }); // recomputes nextDue + status
+  } else if (contactTable === 'prospects') {
+    // prospects.tier is an INTEGER (1|2|3), unlike brokers/partners TEXT
+    // A|B|C — map it for the cadence math, defaulting to the middle tier.
+    const { data } = await supabase.from('prospects').select('tier').eq('id', contactId).maybeSingle();
+    const letter: RelationshipTier =
+      ({ 1: 'A', 2: 'B', 3: 'C' } as Record<number, RelationshipTier>)[Number(data?.tier)] || 'B';
+    const { error } = await supabase
+      .from('prospects')
+      .update({ last_touch: today, next_due: computeNextDue(today, letter) })
+      .eq('id', contactId);
+    if (error) console.error('recordOutreachTouch prospects:', error);
+  }
+  // cold_brokers: no cadence columns yet — their own cadence is Item 4.
+  // The touch_log row above is still the record of the outreach.
+}
+
 // ============ PINNED (manually added to Today's queue) ============
 export type PinnedEntry = { id: string; date: string; source: string };
 

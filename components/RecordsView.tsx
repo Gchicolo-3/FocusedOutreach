@@ -27,7 +27,7 @@ import {
   moveRecord,
 } from '@/lib/records';
 import { computeNextDue, computeStatus } from '@/lib/cadence';
-import { startCall, openInMessages, composeInOutlook } from '@/lib/sendActions';
+import { startCall, openInMessages, openInOutlook } from '@/lib/sendActions';
 import { C, F, labelMono, btnPrimary, btnSecondary, btnGhost, pillStyle, inputBase } from '@/lib/design';
 
 export type RecordTab =
@@ -818,7 +818,7 @@ export default function RecordsView({ view }: { view: RecordTab }) {
                       </button>
                     )}
                     <button
-                      onClick={() => r.email && composeInOutlook(r.email, '', '')}
+                      onClick={() => r.email && openInOutlook(r.email, '', '')}
                       disabled={!r.email}
                       title={r.email ? 'Email in Outlook' : 'No email on file'}
                       style={{
