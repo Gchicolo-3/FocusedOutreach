@@ -32,6 +32,21 @@ input:focus, textarea:focus, select:focus { outline: none; }
 
 input::placeholder, textarea::placeholder { color: #555550; }
 
+/* iOS Safari auto-zooms into any focused input smaller than 16px and stays
+   zoomed after typing, leaving buttons cut off the right edge. Keeping form
+   fields at 16px on small screens prevents the zoom at the source.
+   !important because the app sets input styles inline. */
+@media (max-width: 700px) {
+  input, textarea, select { font-size: 16px !important; }
+}
+
+/* Respect the iPhone notch and home indicator (viewport-fit=cover). */
+body {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: #0e0e0e; }
 ::-webkit-scrollbar-thumb { background: #333333; border-radius: 2px; }

@@ -462,7 +462,9 @@ export default function ReplyChatPage() {
       <div
         style={{
           position: 'fixed', bottom: 0, left: 0, right: 0,
-          background: C.bg, borderTop: `1px solid ${C.border}`, padding: '12px 20px 16px',
+          background: C.bg, borderTop: `1px solid ${C.border}`,
+          // Keep the composer clear of the iPhone home indicator (viewport-fit=cover).
+          padding: '12px 20px calc(16px + env(safe-area-inset-bottom))',
         }}
       >
         <div style={{ maxWidth: 760, margin: '0 auto' }} className="flex gap-2 items-end">
