@@ -68,12 +68,12 @@ export function findBannedPhrases(text: string, channel: ReplyChannel): string[]
 // closing-ask check for the concrete-deliverable check.
 export function auditCheckedSummary(mode: ReplyMode): string {
   if (mode === 'internal') {
-    return 'banned phrases, concrete next deliverable, AI-sounding phrasing, channel format';
+    return 'banned phrases, concrete next deliverable, AI-sounding phrasing, compression and rhythm, channel format';
   }
   if (mode === 'client_prospecting') {
-    return 'banned phrases, real trigger, direct closing ask, AI-sounding phrasing, channel format, plain language';
+    return 'banned phrases, real trigger, direct closing ask, AI-sounding phrasing, compression and rhythm, channel format, plain language';
   }
-  return 'banned phrases, real trigger, direct closing ask, AI-sounding phrasing, channel format';
+  return 'banned phrases, real trigger, direct closing ask, AI-sounding phrasing, compression and rhythm, channel format';
 }
 
 export type EditorVerdict = {
@@ -109,6 +109,28 @@ function channelFormatRules(channel: ReplyChannel, mode: ReplyMode): string {
   }
 }
 
+// The compression check. Added August 2026: the editor could previously only
+// cut, never restore, so a telegraphic draft passed all five original checks.
+// This is the only check whose fix is always to ADD words back.
+const COMPRESSION_CHECK = `
+6. COMPRESSION AND RHYTHM. This is the most common failure and the editor's
+   only job that involves putting words back. Flag the draft when any of the
+   following is true:
+   (a) Connective tissue has been stripped so sentences read telegraphic —
+       "see if anything brewing on your end where we could help" instead of
+       "see if there's anything brewing on your end that we could help with".
+       Words like "there's", "that", "with", "so", "either way", "on your
+       end" are not filler and must not be missing.
+   (b) Three or more sentences of similar short length run back to back with
+       no variation in rhythm.
+   (c) Two dropped-pronoun openers sit back to back ("Wanted to check in.
+       Figured I'd reach out."). One is George. Two in a row is a telegram.
+   (d) The closing ask is a stub with no runway — "Coffee soon?", "Call this
+       week?" — rather than a full direct question such as "Any chance you're
+       around for coffee in the next couple weeks?".
+   The fix under this check is ALWAYS to restore words, never to cut further.
+   Do not shorten anything while fixing this item.`;
+
 function editorSystemPrompt(mode: ReplyMode, channel: ReplyChannel): string {
   const closingCheck =
     mode === 'internal'
@@ -132,7 +154,7 @@ function editorSystemPrompt(mode: ReplyMode, channel: ReplyChannel): string {
   const jargonCheck =
     mode === 'client_prospecting'
       ? `
-6. PLAIN LANGUAGE (client prospecting only): the reader is an end user
+7. PLAIN LANGUAGE (client prospecting only): the reader is an end user
    company contact, not a CRE professional. Flag industry shorthand — "test
    fit", "work letter", "TI", "buildout" used as an unexplained noun, and
    similar CRE terms — and translate it to plain language that keeps the
@@ -181,7 +203,7 @@ ${closingCheck}
 5. CHANNEL FORMAT: the draft must match this channel's required shape.
    ${channelFormatRules(channel, mode)}
    A sign-off on a channel that forbids one, a missing subject line on email,
-   or a blown length limit fails this check.${jargonCheck}
+   or a blown length limit fails this check.${COMPRESSION_CHECK}${jargonCheck}
 
 REVISION RULES, when a check fails:
 - Change only what's needed to fix the failed check. Everything else stays
