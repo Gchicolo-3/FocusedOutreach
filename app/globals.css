@@ -30,6 +30,14 @@ input, textarea, select {
 
 input:focus, textarea:focus, select:focus { outline: none; }
 
+/* Mobile Safari force-zooms any focused input under 16px, which shoves the
+   composer's send button off screen. These are inline styles from
+   lib/design.ts, so !important is required to win. Touch pointers only, so
+   desktop density is untouched. */
+@media (pointer: coarse) {
+  input, textarea, select { font-size: 16px !important; }
+}
+
 input::placeholder, textarea::placeholder { color: #555550; }
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
