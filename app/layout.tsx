@@ -1,9 +1,17 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Focus Studio — Prospecting OS",
   description: "Daily prospecting engine for Focus Studio",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  // Required for env(safe-area-inset-*) to return anything but 0 — the fixed
+  // composer on /reply sits in the home indicator area without it.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

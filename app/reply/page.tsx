@@ -161,6 +161,55 @@ export default function ReplyChatPage() {
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+
+  // On a phone the return key is the only newline key there is, so Enter must
+  // never send — George kept firing half-written messages. Desktop keeps
+  // Enter-to-send with shift+Enter for a newline.
+  const [isTouch, setIsTouch] = useState(false);
+  useEffect(() => {
+    setIsTouch(window.matchMedia('(pointer: coarse)').matches);
+  }, []);
+
+  // Grow to fit the WRAPPED height, not the newline count. On a phone a long
+  // paragraph wraps to many visual lines with zero newlines in it, which is why
+  // the old rows={} math left the box one line tall.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+  }, [input, isTouch]);
+
+  // iOS keeps position:fixed pinned to the LAYOUT viewport, so the keyboard
+  // covers the composer. VisualViewport tells us how much is covered.
+  const [kbInset, setKbInset] = useState(0);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => {
+      setKbInset(Math.max(0, window.innerHeight - vv.height - vv.offsetTop));
+    };
+    vv.addEventListener('resize', onResize);
+    vv.addEventListener('scroll', onResize);
+    onResize();
+    return () => {
+      vv.removeEventListener('resize', onResize);
+      vv.removeEventListener('scroll', onResize);
+    };
+  }, []);
+
+  // The composer grows with the draft, so the thread's bottom padding has to
+  // track its real height instead of a hardcoded guess.
+  const [composerH, setComposerH] = useState(96);
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setComposerH(el.offsetHeight));
+    ro.observe(el);
+    setComposerH(el.offsetHeight);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     loadContactIndex().then(setContactIndex).catch(() => setContactIndex([]));
@@ -264,8 +313,8 @@ export default function ReplyChatPage() {
   const empty = messages.length === 0;
 
   return (
-    <div style={{ background: C.bg, color: C.text, minHeight: '100vh' }}>
-      <header style={{ borderBottom: `1px solid ${C.border}`, padding: '16px 20px' }}>
+    <div style={{ background: C.bg, color: C.text, minHeight: '100dvh' }}>
+      <header style={{ borderBottom: `1px solid ${C.border}`, padding: '16px 16px' }}>
         <div style={{ maxWidth: 760, margin: '0 auto' }} className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <Link href="/" style={{ ...labelMono, textDecoration: 'none' }}>← Dashboard</Link>
@@ -279,7 +328,7 @@ export default function ReplyChatPage() {
         </div>
       </header>
 
-      <main style={{ maxWidth: 760, margin: '0 auto', padding: '20px 20px 140px' }}>
+      <main style={{ maxWidth: 760, margin: '0 auto', padding: `20px 16px ${composerH + 24}px` }}>
         {/* Contact connect */}
         <div style={{ marginBottom: 16 }}>
           {contact ? (
@@ -460,9 +509,17 @@ export default function ReplyChatPage() {
 
       {/* Composer */}
       <div
+        ref={composerRef}
         style={{
-          position: 'fixed', bottom: 0, left: 0, right: 0,
-          background: C.bg, borderTop: `1px solid ${C.border}`, padding: '12px 20px 16px',
+          position: 'fixed',
+          bottom: kbInset,
+          left: 0,
+          right: 0,
+          background: C.bg,
+          borderTop: `1px solid ${C.border}`,
+          padding: '12px 16px',
+          paddingBottom: kbInset > 0 ? 12 : 'calc(16px + env(safe-area-inset-bottom))',
+          transition: 'bottom 0.15s ease',
         }}
       >
         <div style={{ maxWidth: 760, margin: '0 auto' }} className="flex gap-2 items-end">
@@ -471,18 +528,26 @@ export default function ReplyChatPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
+              if (isTouch) return;
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 send();
               }
             }}
-            rows={Math.min(5, Math.max(1, input.split('\n').length))}
+            rows={1}
             placeholder={
               contact
                 ? `What's the situation with ${contact.name.split(' ')[0]}?`
                 : 'Describe the situation… (connect a contact above for full context)'
             }
-            style={{ ...inputBase, resize: 'none', lineHeight: 1.5 }}
+            style={{
+              ...inputBase,
+              resize: 'none',
+              lineHeight: 1.5,
+              minHeight: isTouch ? 72 : 40,
+              maxHeight: 180,
+              overflowY: 'auto',
+            }}
             disabled={sending}
           />
           <button

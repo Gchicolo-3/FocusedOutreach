@@ -53,7 +53,7 @@ function enforceHeyOpener(text: string): string {
 }
 
 const channelInstructions: Record<Channel, string> = {
-  text: 'Write a text message. Max 3 short lines. Casual, warm, punchy. Open with "Hey [first name] —". No subject line.',
+  text: 'Write a text message. Max 4 short lines. Casual, warm, punchy. Open with "Hey [first name]". No subject line.',
   email:
     'Write an email. Max 4 sentences. Include a subject line on the first line prefixed with "Subject: " then a blank line, then the body. Open body with "Hey [first name]," and close with "Best, George".',
   linkedin:
